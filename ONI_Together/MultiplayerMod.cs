@@ -93,6 +93,7 @@ namespace ONI_Together
 				go.AddComponent<LogicStateSyncer>();
 				go.AddComponent<OxySyncManager>();
 				go.AddComponent<NetIdActivityTracker>();
+				go.AddComponent<IdCensus>();
 				go.AddComponent<DiscordRichPresence>();
 
 				// CHECKPOINT 5
