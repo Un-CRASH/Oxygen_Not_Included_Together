@@ -164,12 +164,22 @@ namespace ONI_Together.Misc
         {
             for (int i = storage.items.Count - 1; i >= 0; i--)
             {
+                var item = storage.items[i];
+
+                // A container can hold an entry whose GameObject is already gone: the host
+                // destroyed it and the removal has not reached us yet. DeleteObject() calls
+                // GetComponent() on it and throws, which aborts the whole SyncVar dispatch —
+                // so the container is never rebuilt and stays desynced until the next hard
+                // sync. The stale entry is dropped by the RemoveAll below either way.
+                if (item == null || item.IsNullOrDestroyed()) continue;
+
                 // Left where it is. Skipping these on the sending side is not enough on
                 // its own - the receiver empties the container before rebuilding it, so
                 // without this the suit or the animal is deleted here and simply never
                 // comes back.
-                if (IsEntityNotContents(storage.items[i])) continue;
-                storage.items[i].DeleteObject();
+                if (IsEntityNotContents(item)) continue;
+
+                item.DeleteObject();
             }
             storage.items.RemoveAll(item => item == null || item.IsNullOrDestroyed());
         }
