@@ -94,6 +94,31 @@ namespace ONI_Together.Networking.Packets.Tools.Build
                 return;
 			}
 
+            // A rocket module is not a world building and cannot be raised by def.Build.
+            //
+            // Its components read the craft they belong to, and the craft is what fills that
+            // in: RocketModuleCluster._craftInterface is only ever written by the setter the
+            // Clustercraft assembly calls. Built standalone at a cell, nothing calls it, and
+            // spawning the module kills the session:
+            //
+            //   ModuleGenerator.OnSpawn        NullReferenceException at IL 0x13
+            //     clustercraft = CraftInterface.GetComponent<Clustercraft>()   // null deref
+            //   ReorderableBuilding.OnSpawn    NullReferenceException at IL 0x137
+            //
+            // Two separate components, which is why this is refused here rather than guarded
+            // on either of them - the object itself is the thing that must not exist, and
+            // guarding one component only moves the crash to the next.
+            //
+            // The client goes without the module until the next hard sync, which loads the
+            // save and assembles the craft properly. That is a real gap, but the alternative
+            // is what the log shows: the module appears only as a broken object and the game
+            // drops to its error screen.
+            if (def.BuildingComplete != null && def.BuildingComplete.GetComponent<RocketModuleCluster>() != null)
+            {
+                DebugConsole.LogWarning($"[BuildCompletePacket] {PrefabID} is a rocket module, not a world building - skipping build at cell {Cell}");
+                return;
+            }
+
 			var tags = MaterialTags.Select(t => new Tag(t)).ToList();
 
             if (tags.Count == 0)
