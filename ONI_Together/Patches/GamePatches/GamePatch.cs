@@ -69,7 +69,7 @@ namespace ONI_Together.Patches.GamePatches
       }
 
       Game.Instance.gameObject.AddComponent<LogicPortManager>();
-      WorkableSyncer.RegisterNetId();
+      WorkableSyncer.RegisterNetId(Game.Instance.gameObject);
     }
   }
 }
