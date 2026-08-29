@@ -37,18 +37,12 @@ namespace ONI_Together.Networking.Packets.Tools.Deconstruct
 			if (go == null)
 				return;
 
-			if (!go.TryGetComponent<Deconstructable>(out var deconstructable) || deconstructable.HasBeenDestroyed)
-				return;
-
-			DebugConsole.Log($"[DeconstructCompletePacket] Completing deconstruct at cell {Cell} on objectlayer {ObjectLayer} on client.");
-
-			try
+			if (go.TryGetComponent<Deconstructable>(out var deconstructable) && !deconstructable.HasBeenDestroyed)
 			{
-				deconstructable.OnCompleteWork(null);
-			}
-			catch (System.Exception ex)
-			{
-				DebugConsole.LogError($"[DeconstructCompletePacket] Error completing deconstruct at cell {Cell} on objectlayer {ObjectLayer}: {ex}");
+				DebugConsole.Log($"[DeconstructCompletePacket] Removing deconstructed object at cell {Cell} on objectlayer {ObjectLayer} on client.");
+				// Material drops are host authoritative. Running the full deconstruction
+				// path again can access storage after cleanup (the coat rack crash).
+				Util.KDestroyGameObject(go);
 			}
 		}
 	}
