@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System;
 using System.Linq;
 using ONI_Together.DebugTools;
@@ -198,6 +198,31 @@ namespace ONI_Together.Networking.OxySync.Components
             }
         }
 
+        /// <summary>
+        /// Workables the client must not run vanilla work callbacks for, even when the
+        /// host has authorized the worker.
+        ///
+        /// A client does not own duplicant effects: EffectsPatch blanks Effects.Add and
+        /// Effects.Remove on clients so that every effect arrives from the host instead.
+        /// Blanked, Effects.Add returns null. Clinic's state machine is written against
+        /// vanilla, where it never does - the Exit of its doctored state calls
+        /// StartEffect(doctoredPlaceholderEffect) and reads .effect off the result with
+        /// no null check (Assembly-CSharp, ClinicSM.<InitializeStates>b__4_22, IL 0x70).
+        /// Letting the client StartWork on a Clinic therefore puts that machine into a
+        /// state it cannot leave: the Exit throws before it removes the doctored effects,
+        /// the host keeps replicating them, the machine re-enters doctored, and the Exit
+        /// throws again - about 8,800 times a second in the log this was found in, until
+        /// the game died 34 seconds after a duplicant lay down in a Triage Cot.
+        ///
+        /// Skipping the call restores what the client did for these before #185: nothing.
+        /// The lying-down animation is not lost; it arrives through the anim override sync,
+        /// which the log shows landing before the StartWork that crashed.
+        /// </summary>
+        private static readonly HashSet<Type> ClientSkippedWorkables = new HashSet<Type>
+        {
+            typeof(Clinic),
+        };
+
         [ClientRpc]
         private void RpcUpdateWorkable(MethodType method, int workableNetId, string workableTypeId, int workerNetId)
         {
@@ -233,6 +258,12 @@ namespace ONI_Together.Networking.OxySync.Components
 
             if (workerNetId == 0 || !NetworkIdentityRegistry.TryGetComponent<WorkerBase>(workerNetId, out var worker) || worker == null || worker.gameObject.IsNullOrDestroyed())
             {
+                return;
+            }
+
+            if (ClientSkippedWorkables.Contains(workable.GetType()))
+            {
+                DebugConsole.Log($"[WorkableSyncer] [Client] Skipping '{method}' on {workable.GetProperName()}: {workable.GetType().Name} owns duplicant effects, which clients do not run");
                 return;
             }
 
