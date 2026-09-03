@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using HarmonyLib;
 using ONI_Together.DebugTools;
 using ONI_Together.Networking;
@@ -81,6 +82,91 @@ namespace ONI_Together.Patches.World
                     IsCarrying = false
                 });
             }
+        }
+
+        /// <summary>
+        /// An item leaving a container for the floor. Nothing announced it before: the
+        /// spawn patch skips items born inside containers (refined metal from a smelter,
+        /// the output of a crusher, anything a duplicant puts down), so clients never had
+        /// a copy - and Drop calls neither Store nor Remove.
+        /// </summary>
+        [HarmonyPatch(typeof(Storage), nameof(Storage.Drop), new System.Type[] { typeof(GameObject), typeof(bool) })]
+        public static class StorageDropPatch
+        {
+            public static void Postfix(Storage __instance, GameObject go)
+            {
+                using var _ = Profiler.Scope();
+                try
+                {
+                    AnnounceDropped(__instance, go);
+                }
+                catch (System.Exception ex)
+                {
+                    DebugConsole.LogError($"[StorageDropPatch] Exception: {ex}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// DropAll walks the item list itself rather than calling Drop, so the list is
+        /// taken before and everything that ended up on the floor is announced after.
+        /// </summary>
+        [HarmonyPatch(typeof(Storage), nameof(Storage.DropAll), new System.Type[] { typeof(Vector3), typeof(bool), typeof(bool), typeof(Vector3), typeof(bool), typeof(List<GameObject>) })]
+        public static class StorageDropAllPatch
+        {
+            public static void Prefix(Storage __instance, out List<GameObject> __state)
+            {
+                __state = null;
+                if (!MultiplayerSession.IsHost || !MultiplayerSession.InActiveSession) return;
+                if (__instance == null || __instance.items == null || __instance.items.Count == 0) return;
+                __state = new List<GameObject>(__instance.items);
+            }
+
+            public static void Postfix(Storage __instance, List<GameObject> __state)
+            {
+                using var _ = Profiler.Scope();
+                if (__state == null) return;
+                try
+                {
+                    foreach (var go in __state)
+                        AnnounceDropped(__instance, go);
+                }
+                catch (System.Exception ex)
+                {
+                    DebugConsole.LogError($"[StorageDropAllPatch] Exception: {ex}");
+                }
+            }
+        }
+
+        private static void AnnounceDropped(Storage storage, GameObject go)
+        {
+            if (!MultiplayerSession.IsHost || !MultiplayerSession.InActiveSession) return;
+            if (storage == null || go == null || go.IsNullOrDestroyed()) return;
+            if (Game.Instance == null || !Game.Instance.isSpawned || GameServerHardSync.IsHardSyncInProgress) return;
+
+            var pickupable = go.GetComponent<Pickupable>();
+            if (pickupable == null) return;
+
+            // Still in a container (moved rather than dropped), or vented and dumped away.
+            if (pickupable.storage != null) return;
+
+            // A duplicant putting an item down also stops carrying it.
+            if (storage.GetComponent<MinionBrain>() != null)
+            {
+                var storageIdentity = storage.GetExistingNetIdentity();
+                if (storageIdentity != null && storageIdentity.NetId != 0)
+                {
+                    var goIdentity = go.GetExistingNetIdentity();
+                    PacketSender.SendToAllClients(new DuplicantCarryItemPacket
+                    {
+                        NetId = storageIdentity.NetId,
+                        PickupableNetId = goIdentity != null ? goIdentity.NetId : 0,
+                        IsCarrying = false
+                    });
+                }
+            }
+
+            PickupablePatches.AnnounceToClients(pickupable);
         }
 
         // Pickupable.OnCleanUp only fires when the object is destroyed. Items that are

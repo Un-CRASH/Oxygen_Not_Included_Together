@@ -10,6 +10,84 @@ namespace ONI_Together.Patches.World
 {
 	public static class PickupablePatches
 	{
+        /// <summary>
+        /// Living things and markers are synced by other means; only loose items go
+        /// through the ground-item packets.
+        /// </summary>
+        public static bool IsGroundItemCandidate(Pickupable pickupable)
+        {
+            if (pickupable == null || pickupable.gameObject == null)
+                return false;
+
+            return pickupable.GetComponent<CreatureBrain>() == null &&
+                   pickupable.GetComponent<Health>() == null &&
+                   pickupable.GetComponent<MinionIdentity>() == null &&
+                   !pickupable.name.Contains("TargetLocator");
+        }
+
+        /// <summary>
+        /// Tells every client to create this pickupable. Shared by the spawn patch
+        /// below and by the container drop patches in StoragePatches: an item that
+        /// came into being inside a container was skipped by the spawn patch
+        /// (correctly - container contents are synced as a blob), so when it is
+        /// dropped on the floor the clients have never heard of it.
+        /// </summary>
+        public static void AnnounceToClients(Pickupable pickupable)
+        {
+            using var _ = Profiler.Scope();
+
+            if (!MultiplayerSession.IsHost || !MultiplayerSession.InActiveSession)
+                return;
+            if (Game.Instance == null || !Game.Instance.isSpawned || GameServerHardSync.IsHardSyncInProgress)
+                return;
+            if (!IsGroundItemCandidate(pickupable))
+                return;
+
+            var identity = pickupable.gameObject.GetNetIdentity();
+            if (identity == null)
+                return;
+            if (identity.NetId == 0)
+                identity.RegisterIdentity();
+            if (identity.NetId == 0)
+                return;
+
+            // Check if it is a substance resource (ore, dirt, liquid, gas chunk)
+            var pe = pickupable.GetComponent<PrimaryElement>();
+            bool isSubstance = pe != null && pe.Element != null && pe.Mass > 0f &&
+                               pe.ElementID != SimHashes.Creature &&
+                               pe.ElementID != SimHashes.Void &&
+                               pickupable.GetComponent<SubstanceChunk>() != null;
+
+            if (isSubstance)
+            {
+                var packet = new SpawnPrefabPacket(
+                    identity.NetId,
+                    pe.Element.id.GetHashCode(),
+                    pickupable.transform.position,
+                    pe.Mass,
+                    pe.Temperature,
+                    pe.DiseaseIdx,
+                    pe.DiseaseCount,
+                    pe.Element.id.ToString()
+                );
+                PacketSender.SendToAllClients(packet);
+            }
+            else
+            {
+                var tag = pickupable.PrefabID();
+                var packet = new SpawnPrefabPacket(
+                    identity.NetId,
+                    tag.GetHashCode(),
+                    pickupable.transform.position,
+                    tag.Name
+                )
+                {
+                    IsActive = pickupable.gameObject.activeSelf
+                };
+                PacketSender.SendToAllClients(packet);
+            }
+        }
+
         [HarmonyPatch(typeof(Pickupable), nameof(Pickupable.OnSpawn))]
         public static class PickupableOnSpawnPatch
         {
@@ -18,14 +96,7 @@ namespace ONI_Together.Patches.World
                 using var _ = Profiler.Scope();
                 try
                 {
-                    if (__instance == null || __instance.gameObject == null)
-                        return;
-
-                    // Do not treat living critters, minions, or TargetLocators as loose substance/ore items
-                    if (__instance.GetComponent<CreatureBrain>() != null || 
-                        __instance.GetComponent<Health>() != null || 
-                        __instance.GetComponent<MinionIdentity>() != null ||
-                        __instance.name.Contains("TargetLocator"))
+                    if (!IsGroundItemCandidate(__instance))
                         return;
 
                     var identity = __instance.gameObject.GetNetIdentity();
@@ -48,47 +119,7 @@ namespace ONI_Together.Patches.World
                     if (identity == null)
                         return;
 
-                    if (identity.NetId == 0)
-                        identity.RegisterIdentity();
-
-                    if (identity.NetId == 0)
-                        return;
-
-                    // Check if it is a substance resource (ore, dirt, liquid, gas chunk)
-                    var pe = __instance.GetComponent<PrimaryElement>();
-                    bool isSubstance = pe != null && pe.Element != null && pe.Mass > 0f && 
-                                       pe.ElementID != SimHashes.Creature && 
-                                       pe.ElementID != SimHashes.Void &&
-                                       __instance.GetComponent<SubstanceChunk>() != null;
-
-                    if (isSubstance)
-                    {
-                        var packet = new SpawnPrefabPacket(
-                            identity.NetId,
-                            pe.Element.id.GetHashCode(),
-                            __instance.transform.position,
-                            pe.Mass,
-                            pe.Temperature,
-                            pe.DiseaseIdx,
-                            pe.DiseaseCount,
-                            pe.Element.id.ToString()
-                        );
-                        PacketSender.SendToAllClients(packet);
-                    }
-                    else
-                    {
-                        var tag = __instance.PrefabID();
-                        var packet = new SpawnPrefabPacket(
-                            identity.NetId,
-                            tag.GetHashCode(),
-                            __instance.transform.position,
-                            tag.Name
-                        )
-                        {
-                            IsActive = __instance.gameObject.activeSelf
-                        };
-                        PacketSender.SendToAllClients(packet);
-                    }
+                    AnnounceToClients(__instance);
                 }
                 catch (System.Exception ex)
                 {
@@ -149,6 +180,75 @@ namespace ONI_Together.Patches.World
             }
         }
 
+        /// <summary>
+        /// See PickupableMergePacket. Runs after Absorb, so the absorber already holds
+        /// the merged amount; the absorbed one is queued for destruction but still
+        /// readable this frame. The plain destroy for it is suppressed in the
+        /// clean-up patch below, since it would race this and lose the mass.
+        /// </summary>
+        [HarmonyPatch(typeof(Pickupable), nameof(Pickupable.Absorb))]
+        public static class PickupableAbsorbPatch
+        {
+            public static void Postfix(Pickupable __instance, Pickupable pickupable)
+            {
+                using var _ = Profiler.Scope();
+                try
+                {
+                    if (!MultiplayerSession.IsHost || !MultiplayerSession.InActiveSession)
+                        return;
+                    if (Game.Instance == null || !Game.Instance.isSpawned || GameServerHardSync.IsHardSyncInProgress)
+                        return;
+                    if (__instance == null || pickupable == null)
+                        return;
+                    if (!IsGroundItemCandidate(__instance))
+                        return;
+
+                    var absorberIdentity = __instance.gameObject.GetExistingNetIdentity();
+                    var absorbedIdentity = pickupable.gameObject.GetExistingNetIdentity();
+                    int absorberNetId = absorberIdentity != null ? absorberIdentity.NetId : 0;
+                    int absorbedNetId = absorbedIdentity != null ? absorbedIdentity.NetId : 0;
+                    if (absorberNetId == 0 && absorbedNetId == 0)
+                        return;
+
+                    PacketSender.SendToAllClients(new PickupableMergePacket
+                    {
+                        AbsorberNetId = absorberNetId,
+                        AbsorbedNetId = absorbedNetId,
+                        AbsorberUnits = __instance.TotalAmount,
+                        AbsorberOnGround = __instance.storage == null,
+                    });
+                }
+                catch (System.Exception ex)
+                {
+                    DebugConsole.LogError($"[PickupableAbsorbPatch] Exception: {ex}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Clients do not merge ground stacks on their own. Two stacks landing in one
+        /// cell merge on the host, and the host says so (PickupableMergePacket); a
+        /// client merging them itself as well could pick the other survivor and end
+        /// up deleting both once the message from the host arrives. Container-side
+        /// merges, where allow_cross_storage is set, stay: the client rebuilds
+        /// container contents through Store and relies on them stacking.
+        /// </summary>
+        [HarmonyPatch(typeof(Pickupable), nameof(Pickupable.TryAbsorb))]
+        public static class PickupableTryAbsorbPatch
+        {
+            public static bool Prefix(Pickupable __instance, Pickupable other, bool allow_cross_storage, ref bool __result)
+            {
+                if (!MultiplayerSession.IsClient || !MultiplayerSession.InActiveSession)
+                    return true;
+                if (allow_cross_storage || other == null)
+                    return true;
+                if (__instance.storage != null || other.storage != null)
+                    return true;
+
+                __result = false;
+                return false;
+            }
+        }
 
         [HarmonyPatch(typeof(Pickupable), nameof(Pickupable.OnCleanUp))]
         public static class PickupableCleanedUpPatch
@@ -160,17 +260,15 @@ namespace ONI_Together.Patches.World
                 using var _ = Profiler.Scope();
                 try
                 {
-                    if (__instance == null || __instance.gameObject == null)
-                        return;
-
-                    // Do not treat critters, minions, or plants as ground pickup items
-                    if (__instance.GetComponent<CreatureBrain>() != null || 
-                        __instance.GetComponent<Health>() != null || 
-                        __instance.GetComponent<MinionIdentity>() != null ||
-                        __instance.name.Contains("TargetLocator"))
+                    if (!IsGroundItemCandidate(__instance))
                         return;
 
                     if (!MultiplayerSession.IsHost || !MultiplayerSession.InActiveSession)
+                        return;
+
+                    // Absorbed into another stack: PickupableAbsorbPatch has told the
+                    // clients, with the new amount of the absorber.
+                    if (__instance.wasAbsorbed)
                         return;
 
                     var identity = __instance.GetNetIdentity();
