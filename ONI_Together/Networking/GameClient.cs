@@ -286,6 +286,7 @@ namespace ONI_Together.Networking
 
 			MultiplayerOverlay.Close();
 			NetworkIdentityRegistry.Clear();
+			ONI_Together.Networking.OxySync.Components.OxySyncManager.ClearAll();
 			NetworkConfig.Stop();
 			App.LoadScene("frontend");
 		}
@@ -451,6 +452,7 @@ namespace ONI_Together.Networking
 
 			MultiplayerOverlay.Close();
 			NetworkIdentityRegistry.Clear();
+			ONI_Together.Networking.OxySync.Components.OxySyncManager.ClearAll();
 			NetworkConfig.Stop();
 		}
 

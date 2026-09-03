@@ -52,6 +52,15 @@ namespace Shared.OxySync
         public int InterestGroup { get; set; } = -1;
         public int BehaviourId { get; set; } = -1;
 
+        /// <summary>
+        /// The NetId the sync manager filed this behaviour under. NetId above is read
+        /// live from the NetworkIdentity next to us, and that can differ from the key
+        /// that was used: the identity may be overridden after we registered, and it
+        /// may already be gone by the time we clean up. Removal and re-keying have to
+        /// use the key that was actually used, so the manager keeps it here.
+        /// </summary>
+        public int RegisteredNetId;
+
         public IReadOnlyList<SyncVarField> SyncVarFields =>
             _syncVarFields ?? (IReadOnlyList<SyncVarField>)Array.Empty<SyncVarField>();
 
@@ -106,6 +115,25 @@ namespace Shared.OxySync
         {
             OnBehaviourCleanUp?.Invoke(this);
             base.OnCleanUp();
+        }
+
+        /// <summary>
+        /// KMonoBehaviour.OnDestroy calls OnForcedCleanUp first, on every path. OnCleanUp
+        /// it skips while a scene is loading (isLoadingScene) - and that is the path a
+        /// client takes on every hard sync. The old world was torn down, nothing here
+        /// unregistered, and the sync manager, which lives on the persistent mod object,
+        /// kept every dead behaviour under the very NetIds the save file was about to
+        /// hand to the objects of the new world. Each newcomer found its key taken, was
+        /// filed one id over, and the packets from the host went to the corpse: position
+        /// sync died on the first hard sync and stayed dead until the game was restarted.
+        ///
+        /// Both overrides fire on a normal destroy; the manager treats the second removal
+        /// as a no-op.
+        /// </summary>
+        public override void OnForcedCleanUp()
+        {
+            OnBehaviourCleanUp?.Invoke(this);
+            base.OnForcedCleanUp();
         }
 
         private static IEnumerable<FieldInfo> GetFieldsIncludingBaseTypes(Type type)

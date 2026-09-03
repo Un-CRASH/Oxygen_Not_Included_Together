@@ -59,6 +59,47 @@ namespace Shared.OxySync
         protected float _lastRequestTime;
         protected const float REQUEST_COOLDOWN = 0.5f;
 
+        // The clock of the host, as seen from this client.
+        //
+        // Snapshots are stamped with the DateTimeOffset.UtcNow of the host and were
+        // played back against the one of this machine - two clocks that are routinely
+        // seconds apart. With the host clock ahead, every snapshot looked as if it were
+        // still in the future and playback sat on the oldest of the 16 kept, up to
+        // 0.8 s behind. With it behind, every snapshot was already past the prune cutoff
+        // on arrival and interpolation never ran at all. The offset (host minus local)
+        // is estimated from the stamps themselves: a running average over recent
+        // packets, reset outright when it jumps by more than a second - a pause, a
+        // reconnect, a different host. Shared by every transform, since they share the
+        // host.
+        private static double _hostClockOffsetMs;
+        private static bool _hasHostClockOffset;
+        private const double HOST_CLOCK_RESET_MS = 1000.0;
+        private const double HOST_CLOCK_SMOOTHING = 0.1;
+
+        public static double HostClockOffsetMs => _hasHostClockOffset ? _hostClockOffsetMs : 0.0;
+
+        public static void ResetHostClock()
+        {
+            _hasHostClockOffset = false;
+            _hostClockOffsetMs = 0.0;
+        }
+
+        private static long LocalNowMs => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        private static long HostNowMs => LocalNowMs + (long)Math.Round(_hostClockOffsetMs);
+
+        private static void ObserveHostTimestamp(long timestamp)
+        {
+            double sample = timestamp - LocalNowMs;
+            if (!_hasHostClockOffset || Math.Abs(sample - _hostClockOffsetMs) > HOST_CLOCK_RESET_MS)
+            {
+                _hostClockOffsetMs = sample;
+                _hasHostClockOffset = true;
+                return;
+            }
+            _hostClockOffsetMs += (sample - _hostClockOffsetMs) * HOST_CLOCK_SMOOTHING;
+        }
+
         public override void OnSpawn()
         {
             base.OnSpawn();
@@ -78,6 +119,9 @@ namespace Shared.OxySync
             base.ApplySyncVar(fieldHash, value, timestamp);
 
             if (!useSnapshotInterpolation || timestamp == 0) return;
+
+            if (fieldHash == NetPositionHash)
+                ObserveHostTimestamp(timestamp);
 
             if (fieldHash == NetPositionHash || fieldHash == NetRotationHash || fieldHash == NetScaleHash)
             {
@@ -258,7 +302,7 @@ namespace Shared.OxySync
                 return;
             }
 
-            long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            long now = HostNowMs;
             long bufferMs = (long)(SyncInterval * bufferTimeMultiplier * 1000);
             long playbackTime = now - bufferMs;
 
@@ -303,7 +347,7 @@ namespace Shared.OxySync
 
         private void PruneSnapshots()
         {
-            long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            long now = HostNowMs;
             long cutoff = now - (long)(SyncInterval * bufferTimeMultiplier * 2 * 1000);
 
             while (_snapshots.Count > 0 && _snapshots[0].timestamp < cutoff)

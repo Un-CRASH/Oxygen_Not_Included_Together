@@ -44,9 +44,9 @@ namespace ONI_Together.Networking.OxySync.Packets
 
             if (!MultiplayerSession.IsHost) return;
 
-            OxySyncManager.TryGetBehaviour(NetId, BehaviourId, out NetworkBehaviour behaviour);
+            var behaviour = OxySyncManager.ResolveBehaviour(NetId, BehaviourId);
 
-            if (behaviour == null && !NetworkIdentityRegistry.TryGetComponent<NetworkBehaviour>(NetId, out behaviour))
+            if (behaviour == null)
                 return;
 
             behaviour.InvokeCommand(MethodHash, Args);

@@ -93,6 +93,7 @@ public static class SaveHelper
 		GameClient.Disconnect();
 		PacketHandler.readyToProcess = false;
 		NetworkIdentityRegistry.Clear();
+		ONI_Together.Networking.OxySync.Components.OxySyncManager.ClearAll();
 		MultiplayerSession.PlayerCursors.Clear();
 		MultiplayerOverlay.Show(global::STRINGS.UI.FRONTEND.LOADING);
 
@@ -132,6 +133,7 @@ public static class SaveHelper
 		{
 			MultiplayerOverlay.Close();
 			NetworkIdentityRegistry.Clear();
+			ONI_Together.Networking.OxySync.Components.OxySyncManager.ClearAll();
 			NetworkConfig.Stop();
 
 			App.LoadScene("frontend");

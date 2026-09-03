@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using KSerialization;
+using ONI_Together.DebugTools;
 using ONI_Together.Networking.Components;
 using Shared.OxySync;
 using Shared.OxySync.Attributes;
@@ -29,6 +31,16 @@ namespace ONI_Together.Networking.OxySync.Components
         private float _lastHeartbeatTime;
         private Vector3 _lastPosition;
 
+        // Client-side tally, written to the log every REPORT_INTERVAL seconds.
+        // Position sync could fail with nothing in the log at all; this makes the
+        // next log say whether updates are arriving, for how many entities, and
+        // how far the clock of the host is from ours.
+        private const float REPORT_INTERVAL = 30f;
+        private static readonly HashSet<OxySyncEntityPositionHandler> _live = new HashSet<OxySyncEntityPositionHandler>();
+        private static int _snapshotsApplied;
+        private static int _fullStatesApplied;
+        private static float _nextReportTime;
+
         public override void OnSpawn()
         {
             base.OnSpawn();
@@ -37,6 +49,13 @@ namespace ONI_Together.Networking.OxySync.Components
             useSnapshotInterpolation = true;
             _lastHeartbeatTime = Time.unscaledTime;
             _lastPosition = transform.position;
+            _live.Add(this);
+        }
+
+        public override void OnForcedCleanUp()
+        {
+            _live.Remove(this);
+            base.OnForcedCleanUp();
         }
 
         [Server]
@@ -71,6 +90,8 @@ namespace ONI_Together.Networking.OxySync.Components
         {
             base.ApplySyncVar(fieldHash, value, timestamp);
             _lastSyncReceivedTime = Time.unscaledTime;
+            if (fieldHash == NetPositionHash)
+                _snapshotsApplied++;
         }
 
         [Client]
@@ -83,6 +104,34 @@ namespace ONI_Together.Networking.OxySync.Components
                 kbac.FlipX = _netFlipX;
                 kbac.FlipY = _netFlipY;
             }
+
+            if (Time.unscaledTime >= _nextReportTime)
+            {
+                _nextReportTime = Time.unscaledTime + REPORT_INTERVAL;
+                ReportClientStats();
+            }
+        }
+
+        private static void ReportClientStats()
+        {
+            int inView = 0;
+            int stale = 0;
+            bool haveViewport = WorldStateSyncer.TryGetLocalViewport(out var viewport);
+            int margin = WorldChunkHelper.ChunkSize * 2;
+
+            foreach (var handler in _live)
+            {
+                if (handler == null || !haveViewport) continue;
+                int cell = Grid.PosToCell(handler.transform.position);
+                if (!WorldStateSyncer.IsCellInRect(cell, viewport, margin)) continue;
+                inView++;
+                if (Time.unscaledTime - handler._lastSyncReceivedTime > STALE_THRESHOLD)
+                    stale++;
+            }
+
+            DebugConsole.Log($"[PositionSync] {_live.Count} entities tracked, {inView} in view, {stale} of those silent for over {STALE_THRESHOLD:0}s; last {REPORT_INTERVAL:0}s: {_snapshotsApplied} position updates, {_fullStatesApplied} full-state replies; host clock offset {HostClockOffsetMs:0} ms");
+            _snapshotsApplied = 0;
+            _fullStatesApplied = 0;
         }
 
         protected override bool ShouldRequestPosition()
@@ -120,6 +169,7 @@ namespace ONI_Together.Networking.OxySync.Components
 
             _lastSyncReceivedTime = Time.unscaledTime;
             _lastRequestTime = Time.unscaledTime;
+            _fullStatesApplied++;
         }
 
         private void OnNavTypeChanged(NavType old, NavType current)

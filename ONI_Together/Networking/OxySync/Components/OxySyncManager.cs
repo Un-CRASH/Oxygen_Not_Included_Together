@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Reflection;
 using ONI_Together.DebugTools;
 using ONI_Together.Misc;
@@ -144,8 +145,10 @@ namespace ONI_Together.Networking.OxySync.Components
 			if (!_behaviours.Contains(behaviour))
 				_behaviours.Add(behaviour);
 
-            ResolveBehaviourId(behaviour);
-            _behaviourLookup[(behaviour.NetId, behaviour.BehaviourId)] = behaviour;
+            int netId = behaviour.NetId;
+            ResolveBehaviourId(behaviour, netId);
+            behaviour.RegisteredNetId = netId;
+            _behaviourLookup[(netId, behaviour.BehaviourId)] = behaviour;
 
 			if (behaviour.GetType().GetCustomAttribute<FixedInterestGroupAttribute>() != null)
 				_explicitGroupTypes.Add(behaviour.GetType());
@@ -165,7 +168,11 @@ namespace ONI_Together.Networking.OxySync.Components
         {
             _behaviours.Remove(behaviour);
 
-            _behaviourLookup.Remove((behaviour.NetId, behaviour.BehaviourId));
+            // Remove by the key it was filed under. The live NetId is not reliable here:
+            // the NetworkIdentity next to it may already be destroyed, or overridden since
+            // registration. Only an entry that is actually this behaviour is dropped.
+            RemoveLookupEntry((behaviour.RegisteredNetId, behaviour.BehaviourId), behaviour);
+            RemoveLookupEntry((behaviour.NetId, behaviour.BehaviourId), behaviour);
 
             RemoveBehaviourFromGroupIndex(behaviour, behaviour.InterestGroup);
             var fields = behaviour.SyncVarFields;
@@ -197,6 +204,7 @@ namespace ONI_Together.Networking.OxySync.Components
                 if (behaviour.IsNullOrDestroyed())
                 {
                     _behaviours.RemoveAt(i);
+                    RemoveLookupEntry((behaviour.RegisteredNetId, behaviour.BehaviourId), behaviour);
                     continue;
                 }
 
@@ -426,20 +434,149 @@ namespace ONI_Together.Networking.OxySync.Components
             }
         }
 
-        private void ResolveBehaviourId(NetworkBehaviour behaviour)
+        /// <summary>
+        /// Two live behaviours of one type on one NetId cannot share a key, so the second
+        /// is moved one id over - and the other side, which does not see the collision,
+        /// will keep addressing it under the original id. That is a last resort and gets
+        /// a warning.
+        ///
+        /// What must never trigger it is a dead entry. Before this, anything that missed
+        /// its unregister - every behaviour of a world torn down by a scene load, see
+        /// NetworkBehaviour.OnForcedCleanUp - kept its key, and the same object reloaded
+        /// from the save was pushed to id+1 while the host still sent id. A stale entry is
+        /// evicted here instead, and so is an entry for this very behaviour registering a
+        /// second time.
+        /// </summary>
+        private void ResolveBehaviourId(NetworkBehaviour behaviour, int netId)
         {
-            int netId = behaviour.NetId;
             int id = behaviour.BehaviourId;
 
-            if (!_behaviourLookup.ContainsKey((netId, id)))
-                return;
-
-            do
+            while (_behaviourLookup.TryGetValue((netId, id), out var existing))
             {
+                if (ReferenceEquals(existing, behaviour) || existing.IsNullOrDestroyed())
+                {
+                    _behaviourLookup.Remove((netId, id));
+                    break;
+                }
+
                 id++;
-            } while (_behaviourLookup.ContainsKey((netId, id)));
-            
-            behaviour.BehaviourId = id;
+            }
+
+            if (id != behaviour.BehaviourId)
+            {
+                DebugConsole.LogWarning($"[OxySync] {behaviour.GetType().Name} on NetId {netId} collides with a live {_behaviourLookup[(netId, behaviour.BehaviourId)].GetType().Name}; filed under {id} instead of {behaviour.BehaviourId}. Packets addressed to the original id will not reach it.");
+                behaviour.BehaviourId = id;
+            }
+        }
+
+        private void RemoveLookupEntry((int, int) key, NetworkBehaviour behaviour)
+        {
+            if (_behaviourLookup.TryGetValue(key, out var existing) && ReferenceEquals(existing, behaviour))
+                _behaviourLookup.Remove(key);
+        }
+
+        /// <summary>
+        /// Moves every registered behaviour on this object to the NetId it now carries.
+        /// NetworkIdentity calls this when its NetId is assigned or overridden after the
+        /// behaviours spawned; without it the lookup keeps the old key and packets for the
+        /// new one fall through to the component scan in ResolveBehaviour.
+        /// </summary>
+        public static void RekeyBehaviours(GameObject go, int newNetId)
+        {
+            if (Instance == null || go == null || newNetId == 0) return;
+
+            foreach (var behaviour in go.GetComponents<NetworkBehaviour>())
+            {
+                if (behaviour.IsNullOrDestroyed()) continue;
+                if (!Instance._behaviours.Contains(behaviour)) continue;
+
+                if (behaviour.RegisteredNetId == newNetId &&
+                    Instance._behaviourLookup.TryGetValue((newNetId, behaviour.BehaviourId), out var current) &&
+                    ReferenceEquals(current, behaviour))
+                    continue;
+
+                Instance.RemoveLookupEntry((behaviour.RegisteredNetId, behaviour.BehaviourId), behaviour);
+                Instance.ResolveBehaviourId(behaviour, newNetId);
+                behaviour.RegisteredNetId = newNetId;
+                Instance._behaviourLookup[(newNetId, behaviour.BehaviourId)] = behaviour;
+            }
+        }
+
+        /// <summary>
+        /// Forgets every behaviour. Called where a world is about to be unloaded: this
+        /// object outlives the scene while the behaviours do not, and a stale entry is
+        /// worse than a missing one (see ResolveBehaviourId).
+        /// </summary>
+        public static void ClearAll()
+        {
+            _fallbackWarned.Clear();
+            NetworkTransform.ResetHostClock();
+
+            if (Instance == null) return;
+            Instance._behaviours.Clear();
+            Instance._behaviourLookup.Clear();
+            Instance._behavioursByGroup.Clear();
+            Instance._changedByGroup.Clear();
+            Instance._typeOrdinals.Clear();
+        }
+
+        private static readonly HashSet<(int, int)> _fallbackWarned = new();
+
+        /// <summary>
+        /// The behaviour a packet is addressed to, or null.
+        ///
+        /// The lookup is the fast path. When it misses - or holds a destroyed behaviour -
+        /// the object behind the NetId is scanned for a behaviour with the requested id,
+        /// and that one is re-indexed so the next packet hits the fast path again. The
+        /// old fallback took the first NetworkBehaviour on the object whatever its type;
+        /// on a duplicant that is AnimSyncer, which has no sync vars, so position updates
+        /// addressed to the position handler were dropped without a word. A miss is now
+        /// logged once per address.
+        /// </summary>
+        public static NetworkBehaviour ResolveBehaviour(int netId, int behaviourId)
+        {
+            if (Instance != null &&
+                Instance._behaviourLookup.TryGetValue((netId, behaviourId), out var found) &&
+                !found.IsNullOrDestroyed())
+                return found;
+
+            if (!NetworkIdentityRegistry.TryGet(netId, out var identity) || identity.IsNullOrDestroyed() || identity.gameObject.IsNullOrDestroyed())
+                return null;
+
+            var candidates = identity.gameObject.GetComponents<NetworkBehaviour>();
+            NetworkBehaviour match = null;
+            foreach (var candidate in candidates)
+            {
+                if (candidate.IsNullOrDestroyed()) continue;
+                if (candidate.BehaviourId == behaviourId)
+                {
+                    match = candidate;
+                    break;
+                }
+            }
+
+            if (match == null)
+            {
+                if (_fallbackWarned.Add((netId, behaviourId)))
+                {
+                    string present = string.Join(", ", candidates.Where(c => !c.IsNullOrDestroyed()).Select(c => $"{c.GetType().Name}={c.BehaviourId}"));
+                    DebugConsole.LogWarning($"[OxySync] No behaviour {behaviourId} on NetId {netId} ({identity.gameObject.name}); present: [{present}]. Packet dropped.");
+                }
+                return null;
+            }
+
+            if (Instance != null)
+            {
+                Instance.RemoveLookupEntry((match.RegisteredNetId, match.BehaviourId), match);
+                match.RegisteredNetId = netId;
+                Instance._behaviourLookup[(netId, behaviourId)] = match;
+                if (!Instance._behaviours.Contains(match))
+                    Instance._behaviours.Add(match);
+                if (_fallbackWarned.Add((netId, behaviourId)))
+                    DebugConsole.Log($"[OxySync] Re-indexed {match.GetType().Name} on NetId {netId} ({identity.gameObject.name}); it was not in the lookup under its id.");
+            }
+
+            return match;
         }
     }
 }

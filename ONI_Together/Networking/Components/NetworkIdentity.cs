@@ -1,4 +1,5 @@
 using KSerialization;
+using ONI_Together.Networking.OxySync.Components;
 using ONI_Together.DebugTools;
 using System.IO;
 using Shared.Profiling;
@@ -33,7 +34,9 @@ namespace ONI_Together.Networking.Components
 			{
 				// DebugConsole.LogWarning($"[NetworkIdentity] Skipping registration for {gameObject.name} - Grid not ready");
 				return;
-			}
+				}
+
+				int netIdBefore = NetId;
 
 			// Try to handle deterministic ID for buildings first
 			if (NetId == 0)
@@ -81,7 +84,11 @@ namespace ONI_Together.Networking.Components
 				// DebugConsole.Log($"[NetworkIdentity] Registered Existing NetId {NetId} for {gameObject.name}");
 			}
 			IsRegistered = true;
-		}
+
+			// Any NetworkBehaviour that spawned before this ran was indexed under NetId 0.
+			if (netIdBefore == 0)
+			    OxySyncManager.RekeyBehaviours(gameObject, NetId);
+			}
 
 		/// <summary>
 		/// This will be primarily used when the host spawns in an object and the client and host need to sync the netid
@@ -99,6 +106,9 @@ namespace ONI_Together.Networking.Components
 
 			// Re-register with new NetId
 			NetworkIdentityRegistry.RegisterOverride(this, netIdOverride);
+
+			// The sync manager filed our behaviours under the old NetId.
+			OxySyncManager.RekeyBehaviours(gameObject, netIdOverride);
 
 			//DebugConsole.Log($"[NetworkIdentity] Overridden NetId. New NetId = {NetId} for {gameObject.name}");
 		}
