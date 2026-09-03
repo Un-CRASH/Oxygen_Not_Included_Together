@@ -48,18 +48,19 @@ namespace ONI_Together.Networking.OxySync.StateMachines
             var sm = _smi.sm;
             switch (stateId)
             {
+                // healing.* is about the patient. Every callback in doctored and
+                // newlyDoctored reads master.worker and the effect that StartEffect adds
+                // to it; a client never has a worker on the cot (WorkableSyncer skips
+                // Clinic) and never adds effects (EffectsPatch), so worker is null and
+                // StartEffect returns null. The Enter of doctored then throws at
+                // worker.GetComponent<Effects>() (ClinicSM.<InitializeStates>b__4_20,
+                // IL 0x0b) inside the state machine, which the game answers with its
+                // crash screen; the Exit did the same at IL 0x70 before StartWork was
+                // skipped. The heal itself is host-side. Here the cot only needs to be
+                // operational, so every healing state maps to idle.
                 case 4:
-                    if (!_smi.IsInsideState(sm.operational.healing.newlyDoctored))
-                        _smi.TryGoTo(sm.operational.healing.newlyDoctored);
-                    break;
                 case 3:
-                    if (!_smi.IsInsideState(sm.operational.healing.doctored))
-                        _smi.TryGoTo(sm.operational.healing.doctored);
-                    break;
                 case 2:
-                    if (!_smi.IsInsideState(sm.operational.healing.undoctored))
-                        _smi.TryGoTo(sm.operational.healing.undoctored);
-                    break;
                 case 1:
                     if (!_smi.IsInsideState(sm.operational.idle))
                         _smi.TryGoTo(sm.operational.idle);

@@ -221,6 +221,27 @@ namespace ONI_Together.Networking.OxySync.Components
         private static readonly HashSet<Type> ClientSkippedWorkables = new HashSet<Type>
         {
             typeof(Clinic),
+            // The doctor finishing a visit is what moves ClinicSM into newlyDoctored,
+            // whose Enter walks straight into doctored - the state a client cannot
+            // run (see ClinicStateSyncer). Clients do not doctor.
+            typeof(DoctorChoreWorkable),
+        };
+
+        /// <summary>
+        /// Workables whose CompleteWork the client must not run, while StartWork and
+        /// StopWork stay (they only drive the animation).
+        ///
+        /// Pickupable.OnCompleteWork casts the StartWorkInfo of the worker to
+        /// PickupableStartWorkInfo and reads amount off it. The client started that
+        /// work from StandardWorker_WorkingState_Packet with a plain StartWorkInfo, so
+        /// the cast yields null and every replicated pickup ends in a
+        /// NullReferenceException - one per item picked up, 686 in one host session.
+        /// Had it not thrown, the client would have taken the item locally on top of
+        /// the PickupItemPacket the host sends for the same take.
+        /// </summary>
+        private static readonly HashSet<Type> ClientSkippedCompleteWork = new HashSet<Type>
+        {
+            typeof(Pickupable),
         };
 
         [ClientRpc]
@@ -264,6 +285,12 @@ namespace ONI_Together.Networking.OxySync.Components
             if (ClientSkippedWorkables.Contains(workable.GetType()))
             {
                 DebugConsole.Log($"[WorkableSyncer] [Client] Skipping '{method}' on {workable.GetProperName()}: {workable.GetType().Name} owns duplicant effects, which clients do not run");
+                return;
+            }
+
+            if (method == MethodType.CompleteWork && ClientSkippedCompleteWork.Contains(workable.GetType()))
+            {
+                DebugConsole.Log($"[WorkableSyncer] [Client] Skipping 'CompleteWork' on {workable.GetProperName()}: {workable.GetType().Name} completion is host-side");
                 return;
             }
 
