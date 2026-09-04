@@ -4,6 +4,7 @@ using ONI_Together.DebugTools;
 using ONI_Together.Networking.Components;
 using ONI_Together.Networking.OxySync.Components;
 using ONI_Together.Networking.Packets.Architecture;
+using ONI_Together.Networking.Synchronization;
 using ONI_Together.Scripts.Creatures;
 using ONI_Together.Scripts.Duplicants;
 using Shared.Profiling;
@@ -108,10 +109,18 @@ public class SpawnPrefabPacket : IPacket
         try
         {
             // If already registered with this NetId on client, do not spawn a duplicate
-            if (NetId != 0 && NetworkIdentityRegistry.TryGet(NetId, out var existing) && existing != null)
-            {
-                return;
-            }
+                        if (NetId != 0 && NetworkIdentityRegistry.TryGet(NetId, out var existing) && existing != null)
+                        {
+                            return;
+                        }
+
+                        // The host announced this NetId as a WorldGenSpawner object: our own
+                        // WorldGenSpawner makes the copy, and WorldGenSpawnMap pairs the ids.
+                        if (WorldGenSpawnMap.IsPending(NetId))
+                        {
+                            DebugConsole.Log($"[SpawnPrefabPacket] '{PrefabName}' (NetId: {NetId}) is a WorldGenSpawner object; waiting for the local spawn");
+                            return;
+                        }
 
             GameObject go = null;
             if (HasElementData)
@@ -205,9 +214,9 @@ public class SpawnPrefabPacket : IPacket
                         }
                         if (go == null)
                         {
-                            go = Util.KInstantiate(prefab, Position);
-                            go.SetActive(IsActive);
-                        }
+                                                        go = Util.KInstantiate(prefab, Position);
+                                                        ActivateReplica(go);
+                                                    }
 
                         var netIdComp = go.AddOrGet<NetworkIdentity>();
                         netIdComp.NetId = NetId;
@@ -217,9 +226,9 @@ public class SpawnPrefabPacket : IPacket
                     {
                         go = Util.KInstantiate(prefab, Position);
                         var netIdComp = go.AddOrGet<NetworkIdentity>();
-                        netIdComp.NetId = NetId;
-                        go.SetActive(IsActive);
-                        netIdComp.OverrideNetId(NetId);
+                                                netIdComp.NetId = NetId;
+                                                ActivateReplica(go);
+                                                netIdComp.OverrideNetId(NetId);
                     }
                 }
             }
@@ -260,9 +269,24 @@ public class SpawnPrefabPacket : IPacket
         {
             DebugConsole.LogError($"[SpawnPrefabPacket] Exception spawning prefab (Name='{PrefabName}', Hash={Hash}, NetId={NetId}): {ex}");
         }
-        finally
-        {
-            ProcessingIncoming = false;
+                finally
+                {
+                    ProcessingIncoming = false;
+                }
+            }
+
+            /// <summary>
+            /// A replica is always activated. Nothing ever sends "activate it later", so an
+            /// inactive copy is a copy whose components never run Awake: registered under the
+            /// host's NetId, invisible, and a NullReferenceException for the first order that
+            /// reaches it (StandardWorker.StartWork -> KMonoBehaviour.Subscribe, see
+            /// WorldGenSpawnMap). IsActive = false only ever came from Scenario.SpawnPrefab,
+            /// which no longer sends this packet; log if it shows up again.
+            /// </summary>
+            private void ActivateReplica(GameObject go)
+            {
+                if (!IsActive)
+                    DebugConsole.LogWarning($"[SpawnPrefabPacket] '{PrefabName}' (NetId: {NetId}) arrived with IsActive = false; activating anyway");
+                go.SetActive(true);
+            }
         }
-    }
-}

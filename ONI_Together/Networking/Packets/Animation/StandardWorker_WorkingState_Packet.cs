@@ -128,11 +128,21 @@ namespace ONI_Together.Networking.Packets.Animation
 				return false;
 			}
 
-			if (workable is Pickupable)
-			{
-				DebugConsole.Log($"[StandardWorker_WorkingState_Packet] Ignoring Pickupable start-work for {worker.name} (fetch sync is separate)");
-				return true;
-			}
+						if (workable is Pickupable)
+						{
+							DebugConsole.Log($"[StandardWorker_WorkingState_Packet] Ignoring Pickupable start-work for {worker.name} (fetch sync is separate)");
+							return true;
+						}
+
+						// StandardWorker.StartWork subscribes to the workable's events; on a
+						// workable that never spawned that is KMonoBehaviour.Subscribe on a null
+						// KObject, and the game logs the exception as an error - the crash screen.
+						// Handled, not retried: the object will not spawn in the next ten frames.
+						if (!workable.isSpawned)
+						{
+							DebugConsole.LogWarning($"[StandardWorker_WorkingState_Packet] {worker.name} cannot start on {workableGO.name} (NetId {WorkableNetId}): the object never spawned");
+							return true;
+						}
 
 			try
 			{

@@ -507,10 +507,11 @@ namespace ONI_Together.Networking.OxySync.Components
         /// object outlives the scene while the behaviours do not, and a stale entry is
         /// worse than a missing one (see ResolveBehaviourId).
         /// </summary>
-        public static void ClearAll()
-        {
-            _fallbackWarned.Clear();
-            NetworkTransform.ResetHostClock();
+                public static void ClearAll()
+                {
+                    _fallbackWarned.Clear();
+                    NetworkTransform.ResetHostClock();
+                    ONI_Together.Networking.Synchronization.WorldGenSpawnMap.Clear();
 
             if (Instance == null) return;
             Instance._behaviours.Clear();

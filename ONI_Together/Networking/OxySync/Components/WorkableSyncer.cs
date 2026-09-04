@@ -224,8 +224,13 @@ namespace ONI_Together.Networking.OxySync.Components
             // The doctor finishing a visit is what moves ClinicSM into newlyDoctored,
             // whose Enter walks straight into doctored - the state a client cannot
             // run (see ClinicStateSyncer). Clients do not doctor.
-            typeof(DoctorChoreWorkable),
-        };
+                        typeof(DoctorChoreWorkable),
+                        // IceKettleWorkable (Ice Liquefier) casts the worker's StartWorkInfo to
+                        // PickupableStartWorkInfo in both OnStartWork and OnCompleteWork; the
+                        // client started the worker with a plain StartWorkInfo, so both throw
+                        // (103 NullReferenceExceptions in one client session).
+                        typeof(IceKettleWorkable),
+                    };
 
         /// <summary>
         /// Workables whose CompleteWork the client must not run, while StartWork and
@@ -271,11 +276,20 @@ namespace ONI_Together.Networking.OxySync.Components
                 }
             }
 
-            workable ??= identity.gameObject.GetComponent<Workable>();
-            if (workable == null)
-            {
-                return;
-            }
+                        workable ??= identity.gameObject.GetComponent<Workable>();
+                        if (workable == null)
+                        {
+                            return;
+                        }
+
+                        // A workable that never spawned has no event system: Workable.StartWork
+                        // reaches KMonoBehaviour.Subscribe on a null KObject and the game's own
+                        // catch turns that into the crash screen (Waterweed, 2026-09-04).
+                        if (!workable.isSpawned)
+                        {
+                            DebugConsole.LogWarning($"[WorkableSyncer] [Client] Skipping '{method}' on {workable.GetProperName()} (NetId {workableNetId}): the object never spawned");
+                            return;
+                        }
 
             if (workerNetId == 0 || !NetworkIdentityRegistry.TryGetComponent<WorkerBase>(workerNetId, out var worker) || worker == null || worker.gameObject.IsNullOrDestroyed())
             {

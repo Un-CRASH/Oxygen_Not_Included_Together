@@ -1,6 +1,7 @@
 using KSerialization;
 using ONI_Together.DebugTools;
 using ONI_Together.Networking.Components;
+using ONI_Together.Networking.Synchronization;
 using Shared.OxySync;
 using Shared.OxySync.Attributes;
 using Shared.Profiling;
@@ -298,11 +299,20 @@ namespace ONI_Together.Networking.OxySync.Components
             if (!Grid.IsValidCell(data.Cell) || string.IsNullOrEmpty(data.PlantPrefabTag))
                 return false;
 
-            if (TryFindLocalPlant(data, out var existingPlant))
-            {
-                ApplyPlantState(existingPlant, data);
-                return true;
-            }
+                        if (TryFindLocalPlant(data, out var existingPlant))
+                        {
+                            ApplyPlantState(existingPlant, data);
+                            return true;
+                        }
+
+                        // A wild plant the host's WorldGenSpawner just revealed: our own
+                        // WorldGenSpawner creates it and WorldGenSpawnMap gives it the host's
+                        // id; PlantSyncer then carries the state. Spawning here would leave two.
+                        if (WorldGenSpawnMap.IsPending(data.PlantNetId))
+                        {
+                            DebugConsole.Log($"[PlantLifecycle] '{data.PlantPrefabTag}' at cell {data.Cell} is a WorldGenSpawner plant; waiting for the local spawn");
+                            return true;
+                        }
 
             var receptacle = ResolveReceptacle(data);
             if (receptacle != null && receptacle.Occupant != null && receptacle.Occupant.TryGetComponent<Growing>(out var occupantPlant))
