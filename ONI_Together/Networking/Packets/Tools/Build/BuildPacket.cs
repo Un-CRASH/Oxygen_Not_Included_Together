@@ -102,21 +102,88 @@ namespace ONI_Together.Networking.Packets.Tools.Build
                 return;
             }
 
-            var selected_elements = MaterialTags.Select(t => TagManager.Create(t)).ToList();
-            Vector3 pos = Grid.CellToPosCBC(Cell, Grid.SceneLayer.Building);
+                        if (IsRepeat(def))
+                            return;
 
-            GameObject builtItem;
-            if (InstantBuild)
-                builtItem = InstantBuildBuilding(def, selected_elements, pos);
-            else
-                builtItem = QueueBuild(def, selected_elements, pos);
+                        var selected_elements = MaterialTags.Select(t => TagManager.Create(t)).ToList();
+                        Vector3 pos = Grid.CellToPosCBC(Cell, Grid.SceneLayer.Building);
 
-            if (builtItem == null && def.ReplacementLayer != ObjectLayer.NumLayers)
-                builtItem = HandleReplacementInstant(def, pos, selected_elements) ?? HandleReplacementQueued(def, pos, selected_elements);
+                        GameObject builtItem = null;
+                        // The same building already stands here: the only thing left to do is a
+                        // material replacement, which the replacement path decides on its own
+                        // (same material -> nothing). Queueing a fresh copy would stack it.
+                        if (!IsSameDefStanding(def))
+                        {
+                            if (InstantBuild)
+                                builtItem = InstantBuildBuilding(def, selected_elements, pos);
+                            else
+                                builtItem = QueueBuild(def, selected_elements, pos);
+                        }
 
-            SetPriority(builtItem);
-            DebugConsole.Log("[BuildPacket] Built item " + def);
-        }
+                        if (builtItem == null && def.ReplacementLayer != ObjectLayer.NumLayers)
+                            builtItem = HandleReplacementInstant(def, pos, selected_elements) ?? HandleReplacementQueued(def, pos, selected_elements);
+
+                        SetPriority(builtItem);
+                        if (builtItem != null)
+                            DebugConsole.Log($"[BuildPacket] Built item {def.PrefabID} at cell {Cell}");
+                        else
+                            DebugConsole.Log($"[BuildPacket] Nothing to build for {def.PrefabID} at cell {Cell}");
+                    }
+
+                    private static int _frame = -1;
+                    private static readonly HashSet<(int, string, int)> _appliedThisFrame = new HashSet<(int, string, int)>();
+
+                    /// <summary>
+                    /// A second order for the same building at the same cell is a repeat, never a
+                    /// wish for two of them. Until BuildToolPatch learned to send one packet per
+                    /// placement, a client sent one per mouse move, and the host handled the batch
+                    /// in a single frame: the log shows twelve "Built item Tile" with one timestamp
+                    /// and six FarmTiles finalized at one cell.
+                    ///
+                    /// Two checks, because a building with a Rotatable marks Grid.Objects only in
+                    /// Constructable.OnSpawn, a frame after it was placed:
+                    /// - the same (cell, prefab, layer) already applied in this frame;
+                    /// - the same def already under construction on the building layer or, for a
+                    ///   tile replacement, on the replacement layer.
+                    /// </summary>
+                    private bool IsRepeat(BuildingDef def)
+                    {
+                        if (Time.frameCount != _frame)
+                        {
+                            _frame = Time.frameCount;
+                            _appliedThisFrame.Clear();
+                        }
+
+                        if (!_appliedThisFrame.Add((Cell, PrefabID, (int)def.ObjectLayer)))
+                        {
+                            DebugConsole.Log($"[BuildPacket] Repeat of {def.PrefabID} at cell {Cell} in the same frame - skipped");
+                            return true;
+                        }
+
+                        if (IsSameDefUnderConstruction(Grid.Objects[Cell, (int)def.ObjectLayer], def) ||
+                            (def.ReplacementLayer != ObjectLayer.NumLayers && IsSameDefUnderConstruction(Grid.Objects[Cell, (int)def.ReplacementLayer], def)))
+                        {
+                            DebugConsole.Log($"[BuildPacket] {def.PrefabID} is already queued at cell {Cell} - skipped");
+                            return true;
+                        }
+
+                        return false;
+                    }
+
+                    private static bool IsSameDefUnderConstruction(GameObject go, BuildingDef def)
+                    {
+                        return go != null &&
+                               go.TryGetComponent<Building>(out var building) && building != null && building.Def == def &&
+                               go.GetComponent<Constructable>() != null;
+                    }
+
+                    private bool IsSameDefStanding(BuildingDef def)
+                    {
+                        GameObject go = Grid.Objects[Cell, (int)def.ObjectLayer];
+                        return go != null &&
+                               go.TryGetComponent<Building>(out var building) && building != null && building.Def == def &&
+                               go.GetComponent<BuildingComplete>() != null;
+                    }
 
         private GameObject QueueBuild(BuildingDef def, List<Tag> selected_elements, Vector3 pos)
         {
