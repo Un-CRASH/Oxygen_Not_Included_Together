@@ -94,10 +94,32 @@ public static class SaveHelper
 		PacketHandler.readyToProcess = false;
 		NetworkIdentityRegistry.Clear();
 		MultiplayerSession.PlayerCursors.Clear();
-		MultiplayerOverlay.Show(global::STRINGS.UI.FRONTEND.LOADING);
+				MultiplayerOverlay.Show(global::STRINGS.UI.FRONTEND.LOADING);
 
-		LoadScreen.DoLoad(path);
-	}
+				CloseWorldUiBeforeReload();
+				LoadScreen.DoLoad(path);
+			}
+
+			/// <summary>
+			/// LoadScreen.DoLoad calls ForceStopGame, which runs Sim.Shutdown at once while
+			/// the scene only changes on the next frame. Any world UI that refreshes in
+			/// between reads freed sim memory: with a duplicant selected, the vitals tab hit
+			/// Grid.Radiation[cell] on a null pointer (RadiationBalanceDisplayer.GetTooltip)
+			/// and the game showed its crash screen mid hard sync. Dropping the selection
+			/// closes the details screen before the sim goes away.
+			/// </summary>
+			private static void CloseWorldUiBeforeReload()
+			{
+				try
+				{
+					if (SelectTool.Instance != null)
+						SelectTool.Instance.Select(null, true);
+				}
+				catch (System.Exception ex)
+				{
+					DebugConsole.LogWarning($"[SaveHelper] Could not clear the selection before reload: {ex.Message}");
+				}
+			}
 	public static void ShowMessageAndReturnToMainMenu(string msg)
 	{
 		using var _ = Profiler.Scope();
@@ -445,9 +467,10 @@ public static class SaveHelper
 		GameClient.CacheCurrentServer();
 		GameClient.Disconnect();
 		PacketHandler.readyToProcess = false;
-		MultiplayerOverlay.Show(global::STRINGS.UI.FRONTEND.LOADING);
+				MultiplayerOverlay.Show(global::STRINGS.UI.FRONTEND.LOADING);
 
-		LoadScreen.DoLoad(targetFile); // use the correct variable
+				CloseWorldUiBeforeReload();
+				LoadScreen.DoLoad(targetFile); // use the correct variable
 	}
 
 }

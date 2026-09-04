@@ -226,12 +226,15 @@ namespace ONI_Together.Networking.Components
 
         public void Unregister(GameObject go)
         {
-            if (go.IsNullOrDestroyed()) return;
+                        if (go.IsNullOrDestroyed()) return;
 
-            var identity = go.GetNetIdentity();
-            if (identity == null) return;
+                        // Called from Building.OnCleanUp: the object is being destroyed, so
+                        // GetNetIdentity's AddComponent fallback would return null and throw
+                        // (338 logged errors in one client session). Only an identity that
+                        // already exists can be tracked anyway.
+                        if (!go.TryGetComponent<NetworkIdentity>(out var identity) || identity == null) return;
 
-            _tracked.Remove(identity.NetId);
+                        _tracked.Remove(identity.NetId);
             _lastPacketTime.Remove(identity.NetId);
         }
 
