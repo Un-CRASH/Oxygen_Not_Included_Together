@@ -39,9 +39,13 @@ namespace ONI_Together.Networking
 				return identity;
 			}
 
-			var newIdentity = go.AddComponent<NetworkIdentity>();
-			newIdentity.RegisterIdentity();
-			return newIdentity;
+						// Unity refuses to add a component to an object that is being destroyed
+						// and returns null; report "no identity" rather than throw.
+						var newIdentity = go.AddComponent<NetworkIdentity>();
+						if (newIdentity == null)
+							return null;
+						newIdentity.RegisterIdentity();
+						return newIdentity;
 		}
 
 		public static bool TryGetNetIdentity(this GameObject go, out NetworkIdentity identity)
