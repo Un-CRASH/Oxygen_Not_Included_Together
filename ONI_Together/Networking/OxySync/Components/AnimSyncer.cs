@@ -40,7 +40,8 @@ namespace ONI_Together.Networking.OxySync.Components
 
 			// Before OnSpawn the RPC table is empty, and CallClientRpc only logs
 			// "'RpcPlayAnim' is not a registered ClientRpc" (1010 times in one session).
-			if (!isSpawned)
+			// isSpawned is set before OnSpawn runs, hence the second test.
+			if (!isSpawned || ClientRpcs.Count == 0)
 				return;
 
 			sequenceNumber++;
