@@ -1,9 +1,12 @@
 ﻿using ONI_Together.DebugTools;
 using ONI_Together.Menus;
 using ONI_Together.Networking.Packets.Core;
+using ONI_Together.Networking.OxySync.Components;
 using ONI_Together.Networking.Packets.World;
 using ONI_Together.Networking.States;
 using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 using Shared.Profiling;
 using UnityEngine;
 
@@ -39,6 +42,12 @@ namespace ONI_Together.Networking
 			}
 
 			SpeedControlScreen.Instance?.Pause(false); // Pause the game
+
+			// Pause() is not one of the calls GameSpeedSyncer follows (only SetSpeed and
+			// TogglePause are), so this pause never reached the clients: they kept
+			// simulating - and the syncer kept telling them to - while the host stood
+			// still. Say it explicitly; the host's play button (TogglePause) lifts it.
+			GameSpeedSyncer.Instance?.RequestSetSpeed((int)GameSpeedSyncer.SpeedState.Paused);
 			MultiplayerOverlay.Show(STRINGS.UI.MP_OVERLAY.SYNC.HARDSYNC_INPROGRESS);
 
             numberOfClientsAtTimeOfSync = MultiplayerSession.ConnectedPlayers.Count;
@@ -53,42 +62,67 @@ namespace ONI_Together.Networking
 
 			DebugConsole.Log($"[HardSync] Starting hard sync for {numberOfClientsAtTimeOfSync} client(s)...");
 			CoroutineRunner.RunOne(HardSyncCoroutine(consumeDailyUse));
-			CoroutineRunner.RunOne(ReadyWatchdog());
+			CoroutineRunner.RunOne(ReadyWatchdog(++_generation));
 		}
 
 		/// <summary>
-		/// Seconds the host waits for every client to report ready before it goes on
-		/// without the ones that did not. A client that had not yet processed the
-		/// HardSyncPacket (it sat behind minutes of queued world traffic before the
-		/// priority lane) kept the host on the waiting screen until the server was
-		/// restarted by hand - and that restart wiped the identity registry
-		/// (see NetworkIdentityRegistry.RebuildFromScene). The straggler still syncs
-		/// when the packet reaches it; it just no longer holds everyone else.
+		/// Seconds a client may stay unready before the host goes on without it. A client
+		/// that had not yet processed the HardSyncPacket (it sat behind minutes of queued
+		/// world traffic before the priority lane) kept the host on the waiting screen
+		/// until the server was restarted by hand - and that restart wiped the identity
+		/// registry (see NetworkIdentityRegistry.RebuildFromScene). The straggler still
+		/// syncs when the packet reaches it; it just no longer holds everyone else.
 		/// </summary>
 		public const float ReadyTimeoutSeconds = 120f;
 
-		private static IEnumerator ReadyWatchdog()
+		/// <summary>
+		/// Bumped by every PerformHardSync. The watchdog of an earlier sync exits when it
+		/// sees a newer generation instead of judging the players of the sync after it.
+		/// </summary>
+		private static int _generation;
+
+		/// <summary>
+		/// Runs from a hard sync until the next one, so a straggler that reports Unready
+		/// late - when it finally loads the save - is covered as well: the clock starts
+		/// when a player is seen unready and only that player is released when it runs
+		/// out. Players are not judged by the "everyone ready" flag (a player joining
+		/// during the wait counts as ready by default and would have ended the watch).
+		/// </summary>
+		private static IEnumerator ReadyWatchdog(int generation)
 		{
-			float started = Time.unscaledTime;
+			var unreadySince = new Dictionary<ulong, float>();
 
-			// Let HardSyncCoroutine mark everyone unready before the first look.
-			yield return new WaitForSecondsRealtime(2f);
-
-			while (MultiplayerSession.IsHost && MultiplayerSession.InActiveSession && !ReadyManager.IsEveryoneReady())
+			while (_generation == generation && MultiplayerSession.IsHost && MultiplayerSession.InActiveSession)
 			{
-				if (Time.unscaledTime - started >= ReadyTimeoutSeconds)
-				{
-					foreach (var player in MultiplayerSession.ConnectedPlayers.Values)
-					{
-						if (player.PlayerId == MultiplayerSession.HostUserID) continue;
-						if (player.readyState == ClientReadyState.Ready) continue;
-						DebugConsole.LogWarning($"[HardSync] {player.PlayerName} ({player.PlayerId}) did not report ready within {ReadyTimeoutSeconds:F0} s; continuing without waiting for them");
-						ReadyManager.SetPlayerReadyState(player, ClientReadyState.Ready);
-					}
-					ReadyManager.RefreshReadyState();
-					yield break;
-				}
+				// Also lets HardSyncCoroutine mark everyone unready before the first look.
 				yield return new WaitForSecondsRealtime(2f);
+				if (_generation != generation) yield break;
+
+				float now = Time.unscaledTime;
+				bool released = false;
+				foreach (var player in MultiplayerSession.ConnectedPlayers.Values.ToList())
+				{
+					if (player.PlayerId == MultiplayerSession.HostUserID) continue;
+					if (player.readyState == ClientReadyState.Ready)
+					{
+						unreadySince.Remove(player.PlayerId);
+						continue;
+					}
+					if (!unreadySince.TryGetValue(player.PlayerId, out float since))
+					{
+						unreadySince[player.PlayerId] = now;
+						continue;
+					}
+					if (now - since < ReadyTimeoutSeconds) continue;
+
+					DebugConsole.LogWarning($"[HardSync] {player.PlayerName} ({player.PlayerId}) did not report ready within {ReadyTimeoutSeconds:F0} s; continuing without waiting for them");
+					ReadyManager.SetPlayerReadyState(player, ClientReadyState.Ready);
+					unreadySince.Remove(player.PlayerId);
+					released = true;
+				}
+
+				if (released)
+					ReadyManager.RefreshReadyState();
 			}
 		}
 
