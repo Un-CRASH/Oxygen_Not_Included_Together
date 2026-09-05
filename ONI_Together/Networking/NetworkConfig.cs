@@ -12,6 +12,7 @@ using SteamServer = ONI_Together.Networking.Transport.Steam.SteamworksServer;
 using SteamClient = ONI_Together.Networking.Transport.Steam.SteamworksClient;
 using ONI_Together.Networking.Transport.Steamworks;
 using ONI_Together.DebugTools;
+using ONI_Together.Networking.OxySync.Components;
 using Shared.Profiling;
 using ONI_Together.Patches.ToolPatches;
 using UnityEngine;
@@ -94,7 +95,10 @@ namespace ONI_Together.Networking
             SelectToolPatch.UpdateColor();
             Game.Instance.Trigger(MP_HASHES.OnMultiplayerGameSessionInitialized);
             SpeedControlScreen.Instance.Pause(true);
-        }
+            // Let GameSpeedSyncer know, or a client joining now is told the pre-pause speed
+            // every two seconds while the host stands still (see GameServerHardSync).
+            GameSpeedSyncer.Instance?.RequestSetSpeed((int)GameSpeedSyncer.SpeedState.Paused);
+            }
 
         /// <summary>
         /// Stops the server based off the current transport

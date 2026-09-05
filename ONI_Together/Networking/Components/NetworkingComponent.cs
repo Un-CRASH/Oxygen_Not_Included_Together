@@ -50,6 +50,7 @@ namespace ONI_Together.Networking.Components
 			else
 			{
 				GameClient.Poll();
+				Synchronization.GameClockSync.ClientTick();
 
 				if (MultiplayerSession.IsClient && MultiplayerSession.HostUserID.IsValid())
 				{
