@@ -383,6 +383,10 @@ namespace ONI_Together.Networking.OxySync.Components
             if (Instance == null) return;
             if (!MultiplayerSession.IsHost) return;
 
+            // A cursor packet can trail its sender's disconnect by a frame; without this every
+            // behaviour in the group tried to send and logged "no connection" (1740 lines in one frame).
+            if (!MultiplayerSession.ConnectedPlayers.TryGetValue(playerId, out var player) || player.Connection == null) return;
+
             if (!Instance._behavioursByGroup.TryGetValue(groupId, out var behavioursInGroup))
                 return;
 

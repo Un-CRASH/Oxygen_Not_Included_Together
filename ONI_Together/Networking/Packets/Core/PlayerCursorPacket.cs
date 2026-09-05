@@ -152,6 +152,11 @@ namespace ONI_Together.Networking.Packets.Core
 			if (PlayerID == MultiplayerSession.LocalUserID)
 				return;
 
+			// The host ignores cursor updates from a peer that already disconnected: they can trail
+			// the disconnect by a frame and would recreate the cursor and its chunk subscriptions.
+			if (MultiplayerSession.IsHost && !MultiplayerSession.ConnectedPlayers.ContainsKey(PlayerID))
+				return;
+
 			if (MultiplayerSession.TryGetCursorObject(PlayerID, out PlayerCursor cursor))
 			{
 				cursor.SetPlayerName(PlayerName);
