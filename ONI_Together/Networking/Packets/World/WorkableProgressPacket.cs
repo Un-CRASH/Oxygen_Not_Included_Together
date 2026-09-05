@@ -200,6 +200,24 @@ namespace ONI_Together.Networking.Packets.World
 			return true;
 		}
 
+		/// <summary>
+		/// A pickupable inside a storage (food in an inventory or on a table, ore in a bin)
+		/// never exists on clients, which destroy items when they are stored; progress for it
+		/// would only be retried and reported as unresolved, so the host does not send it.
+		/// </summary>
+		internal static bool IsStoredPickupable(Workable workable)
+		{
+			return workable != null && workable.TryGetComponent<Pickupable>(out var pickupable) && pickupable.storage != null;
+		}
+
+		private static string ShortTypeName(string assemblyQualifiedName)
+		{
+			if (string.IsNullOrEmpty(assemblyQualifiedName))
+				return "?";
+			int comma = assemblyQualifiedName.IndexOf(',');
+			return comma > 0 ? assemblyQualifiedName.Substring(0, comma) : assemblyQualifiedName;
+		}
+
 		private static IEnumerator RetryApply(WorkableProgressPacket packet)
 		{
 			for (int attempt = 0; attempt < 12; attempt++)
@@ -213,7 +231,8 @@ namespace ONI_Together.Networking.Packets.World
 					yield break;
 			}
 
-			DebugConsole.LogWarning($"[WorkableProgressPacket] Failed to resolve target {packet.TargetNetId} ({packet.TargetTypeName})");
+			string typeName = ShortTypeName(packet.TargetTypeName);
+			DebugConsole.LogAggregated("WorkableProgress.Unresolved." + typeName, $"[WorkableProgressPacket] Failed to resolve target {packet.TargetNetId} ({typeName})");
 		}
 	}
 }

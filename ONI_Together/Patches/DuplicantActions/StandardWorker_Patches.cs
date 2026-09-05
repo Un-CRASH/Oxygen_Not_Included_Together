@@ -77,7 +77,8 @@ namespace ONI_Together.Patches.DuplicantActions
 				if (workable == null || workable.IsNullOrDestroyed())
 					return;
 
-				PacketSender.SendToAllClients(WorkableProgressPacket.CreateHidden(workable), PacketSendMode.ReliableImmediate);
+				if (!WorkableProgressPacket.IsStoredPickupable(workable))
+					PacketSender.SendToAllClients(WorkableProgressPacket.CreateHidden(workable), PacketSendMode.ReliableImmediate);
 
 				if (workable.TryGetComponent<ComplexFabricator>(out var fabricator) && fabricator != null && !fabricator.IsNullOrDestroyed())
 				{

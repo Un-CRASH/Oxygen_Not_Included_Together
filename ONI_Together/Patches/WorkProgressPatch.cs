@@ -63,7 +63,8 @@ public static class WorkProgressPatch
 		return workable is DefragmentationZone
 			|| workable.GetType().Name == "RancherWorkable"
 			|| workable is LiquidPumpingStation
-			|| workable is Pickupable;
+			|| workable is Pickupable
+			|| WorkableProgressPacket.IsStoredPickupable(workable);
 	}
 
 	private static int GetTrackingKey(int workableNetId, string workableType)
