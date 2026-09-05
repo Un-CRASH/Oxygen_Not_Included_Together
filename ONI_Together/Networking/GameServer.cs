@@ -8,6 +8,7 @@ using Steamworks;
 using System;
 using System.Runtime.InteropServices;
 using ONI_Together.Networking.Components;
+using ONI_Together.Networking.Synchronization;
 using ONI_Together.Misc;
 using UnityEngine;
 
@@ -125,6 +126,9 @@ namespace ONI_Together.Networking
 
 						// Check for lost chunks and retransmit specific missing chunks
 						SaveFileTransferManager.CheckForLostChunks();
+
+						// The host's clock for the clients, once a second of real time (see GameClockSync).
+						GameClockSync.HostTick();
 					}
 					catch (Exception ex)
 					{

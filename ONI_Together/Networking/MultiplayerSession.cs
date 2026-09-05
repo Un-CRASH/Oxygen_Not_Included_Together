@@ -98,6 +98,7 @@ namespace ONI_Together.Networking
 			HostUserID = Utils.NilUlong();
 			WorkProgressPatch.ClearTracking();
 			RemoteProgressRegistry.ClearAll();
+			Synchronization.GameClockSync.Reset();
 
 			IsQuitting = false;
 

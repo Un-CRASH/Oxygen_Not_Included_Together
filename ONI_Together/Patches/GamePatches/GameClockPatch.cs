@@ -1,7 +1,6 @@
 using HarmonyLib;
 using ONI_Together.DebugTools;
 using ONI_Together.Networking;
-using ONI_Together.Networking.OxySync.Components;
 using System;
 using System.Collections;
 using Shared.Profiling;
@@ -9,44 +8,36 @@ using UnityEngine;
 
 namespace ONI_Together.Patches.GamePatches
 {
+	/// <summary>
+	/// Host-side cycle bookkeeping. The clock itself is no longer synced from here:
+	/// GameServer.Update broadcasts it once a second of real time through
+	/// GameClockSync, so it keeps flowing while the host is paused, and the client
+	/// side of that class can move the clock in both directions. The OxySync
+	/// GameTimeSyncer this used to attach to the GameClock never registered on any
+	/// peer (no log ever shows its NetId), and GameClock.SetTime, which it relied on,
+	/// can only push a clock forward.
+	/// </summary>
 	[HarmonyPatch(typeof(GameClock))]
 	public static class GameClockPatch
 	{
-		public static bool allowAddTimeForSetTime = false;
-
-		private static float _lastSentTime = 0f;
 		private static int _lastCycle = -1;
 
 		[HarmonyPatch(nameof(GameClock.OnPrefabInit))]
 		[HarmonyPostfix]
 		public static void OnPrefabInit_Postfix(GameClock __instance)
 		{
-			_lastSentTime = __instance.GetTime();
 			_lastCycle = __instance.GetCycle();
-
-			// Attach OxySync time sync component directly to GameClock
-			if (!__instance.TryGetComponent<GameTimeSyncer>(out var gtsc))
-				__instance.gameObject.AddComponent<GameTimeSyncer>();
-        }
+		}
 
 		[HarmonyPatch(nameof(GameClock.OnDeserialized))]
 		[HarmonyPostfix]
 		public static void OnDeserialized_Postfix(GameClock __instance)
 		{
-            // Save loaded
-            _lastSentTime = __instance.GetTime();
-            _lastCycle = __instance.GetCycle();
-        }
-
-		// Allow clients to advance time smoothly locally; host sync will correct drift
-		[HarmonyPatch(nameof(GameClock.AddTime))]
-		[HarmonyPrefix]
-		public static bool AddTime_Prefix()
-		{
-			return true;
+			// Save loaded
+			_lastCycle = __instance.GetCycle();
 		}
 
-		// Host logic: send WorldCyclePacket every 1s and trigger HardSync at cycle start
+		// Host: a new cycle re-arms the once-per-cycle hard sync and, when configured, runs one.
 		[HarmonyPatch(nameof(GameClock.AddTime))]
 		[HarmonyPostfix]
 		public static void AddTime_Postfix(GameClock __instance)
@@ -58,31 +49,18 @@ namespace ONI_Together.Patches.GamePatches
 				if (!MultiplayerSession.InActiveSession || !MultiplayerSession.IsHost)
 					return;
 
-				float currentTime = __instance.GetTime();
-
-				// 1. Broadcast world time every 1s via OxySync ClientRpc
-				if (currentTime - _lastSentTime >= 1f)
-				{
-					_lastSentTime = currentTime;
-
-					GameTimeSyncer.Instance?.BroadcastTime(
-						__instance.GetCycle(),
-						__instance.GetTimeSinceStartOfCycle());
-				}
-
-				// 2. Trigger HardSync at the start of a new cycle
 				int currentCycle = __instance.GetCycle();
-				if (currentCycle != _lastCycle)
-				{
-					_lastCycle = currentCycle;
+				if (currentCycle == _lastCycle)
+					return;
 
-					GameServerHardSync.hardSyncDoneThisCycle = false;
+				_lastCycle = currentCycle;
+				GameServerHardSync.hardSyncDoneThisCycle = false;
 
-					DebugConsole.Log($"[HardSync] New cycle detected ({currentCycle}) — Hard Sync disabled.");
+				bool atCycleStart = Configuration.Instance.HardSyncOnCycleStart;
+				DebugConsole.Log($"[HardSync] New cycle detected ({currentCycle}); hard sync at cycle start is {(atCycleStart ? "on" : "off")}.");
 
-                    if (Configuration.Instance.HardSyncOnCycleStart)
-                        CoroutineRunner.RunOne(DelayedHardSync());
-				}
+				if (atCycleStart)
+					CoroutineRunner.RunOne(DelayedHardSync());
 			}
 			catch (Exception ex)
 			{
