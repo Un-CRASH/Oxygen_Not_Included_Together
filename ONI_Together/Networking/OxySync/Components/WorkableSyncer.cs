@@ -230,6 +230,10 @@ namespace ONI_Together.Networking.OxySync.Components
                         // client started the worker with a plain StartWorkInfo, so both throw
                         // (103 NullReferenceExceptions in one client session).
                         typeof(IceKettleWorkable),
+                        // RancherChore.RancherWorkable.OnStartWork reads the rancher chore's state
+                        // machine, which only the host runs; on a client it threw a
+                        // NullReferenceException on every StartWork (24 in one session).
+                        typeof(RancherChore.RancherWorkable),
                     };
 
         /// <summary>

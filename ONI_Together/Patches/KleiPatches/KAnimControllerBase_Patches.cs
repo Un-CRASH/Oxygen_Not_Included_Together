@@ -5,6 +5,7 @@ using ONI_Together.Networking;
 using ONI_Together.Networking.Packets.Animation;
 using ONI_Together.Networking.Packets.Core;
 using System;
+using System.Collections.Generic;
 using Shared.Profiling;
 using ONI_Together.Networking.OxySync.Components;
 
@@ -13,6 +14,9 @@ namespace ONI_Together.Patches.KleiPatches
 	class KAnimControllerBase_Patches
 	{
 		internal static float GetCurrentTime() => GameClock.Instance?.GetTime() ?? 0f;
+
+		// Prefabs already warned about below; the beehive alone wrote 15 500 such lines in one session.
+		private static readonly HashSet<string> _warnedNoSyncer = new HashSet<string>();
 
 		internal static bool ShouldSyncAnim(KAnimControllerBase controller, KPrefabID prefabID)
 		{
@@ -47,7 +51,8 @@ namespace ONI_Together.Patches.KleiPatches
 			
 			if (!controller.TryGetComponent<AnimSyncer>(out var _animSyncer))
 			{
-				DebugConsole.LogWarning($"[KAnimControllerBase_Patches] AnimSyncer not found on {controller.GetProperName()}");
+				if (_warnedNoSyncer.Add(prefabId.PrefabTag.Name))
+					DebugConsole.LogWarning($"[KAnimControllerBase_Patches] AnimSyncer not found on {controller.GetProperName()} (logged once per prefab)");
 				// Allow the animation to play anyway, but log a warning. This should not happen in a properly configured multiplayer session.
 				return true;
 			}

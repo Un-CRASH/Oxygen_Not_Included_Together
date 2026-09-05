@@ -56,26 +56,16 @@ namespace ONI_Together.Networking.Packets.World
 				}
 				catch (Exception ex) { DebugConsole.LogError($"[ResearchCompletePacket] Error triggering ResearchComplete: {ex}"); }
 
-				// Refresh the research screen if open
+				// Refresh the research screen if open. OnActiveResearchChanged takes the research
+				// queue; the old reflective call passed no argument at all and threw a
+				// TargetParameterCountException on every completed research.
 				try
 				{
-					object researchScreen = null;
-					if (ManagementMenu.Instance != null)
-					{
-						researchScreen = HarmonyLib.Traverse.Create(ManagementMenu.Instance)
-							.Field("researchScreen")
-							.GetValue();
-					}
-
+					var researchScreen = ManagementMenu.Instance != null ? ManagementMenu.Instance.researchScreen : null;
 					if (researchScreen != null)
-					{
-						// Call OnActiveResearchChanged to update visuals
-						HarmonyLib.Traverse.Create(researchScreen)
-							.Method("OnActiveResearchChanged", new Type[] { typeof(object) })
-							.GetValue(null);
-					}
+						researchScreen.OnActiveResearchChanged(Research.Instance.GetResearchQueue());
 				}
-				catch (Exception ex) { DebugConsole.LogError($"[ResearchCompletePacket] Error refreshing research screen: {ex}"); }
+				catch (Exception ex) { DebugConsole.LogWarning($"[ResearchCompletePacket] Could not refresh the research screen: {ex.GetType().Name}: {ex.Message}"); }
 			}
 			catch (Exception ex)
 			{

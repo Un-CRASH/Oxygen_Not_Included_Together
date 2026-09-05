@@ -48,9 +48,23 @@ namespace ONI_Together.Networking.Packets.World.Buildings
 				return;
 			}
 
+			if (fab.recipe_list == null || CompletedRecipeIdx < 0 || CompletedRecipeIdx >= fab.recipe_list.Length)
+			{
+				DebugConsole.LogWarning($"[ComplexFabricatorSpawnProductPacket] {fab.name} (NetId {NetId}) has no recipe at index {CompletedRecipeIdx}");
+				return;
+			}
+
 			ComplexRecipe complexRecipe = fab.recipe_list[CompletedRecipeIdx];
 			DebugConsole.Log($"[ComplexFabricatorSpawnProductPacket] spawning product {complexRecipe.id} for {fab.name} with netId {NetId}");
-			fab.SpawnOrderProduct(complexRecipe);
+			try
+			{
+				fab.SpawnOrderProduct(complexRecipe);
+			}
+			catch (Exception ex)
+			{
+				// The client's copy of the fabricator can be a step behind the host's order list.
+				DebugConsole.LogWarning($"[ComplexFabricatorSpawnProductPacket] Could not spawn {complexRecipe.id} on {fab.name}: {ex.GetType().Name}: {ex.Message}");
+			}
 			RemoteProgressRegistry.Clear(NetId, RemoteProgressKind.ComplexFabricatorOrder);
 		}
 	}
