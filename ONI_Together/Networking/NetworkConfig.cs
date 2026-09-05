@@ -136,6 +136,7 @@ namespace ONI_Together.Networking
             MultiplayerSession.Clear();
 
             SelectToolPatch.UpdateColor();
+            DebugConsole.FlushAggregates(force: true);
         }
 
         public static void UpdateTransport(NetworkTransport newTransport)

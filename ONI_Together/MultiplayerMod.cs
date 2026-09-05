@@ -66,6 +66,14 @@ namespace ONI_Together
 			Harmony = harmony;
             PUtil.InitLibrary(false);
             new POptions().RegisterOptions(this, typeof(Configuration));
+            try
+            {
+                DebugConsole.Verbosity = Configuration.Instance.Network.LogVerbosity;
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.LogWarning($"[MultiplayerMod] Could not read the log verbosity option, staying at Normal: {ex.Message}");
+            }
             base.OnLoad(harmony);
 
             ModAssets.LoadAssetBundles();
@@ -144,7 +152,7 @@ namespace ONI_Together
 				if (type == LogType.Exception || type == LogType.Error)
 				{
 					_inLogHandler = true;
-					DebugConsole.LogError($"[Unity] {type}: {condition}\n{stackTrace}");
+					DebugConsole.AddExternal($"[Unity] {type}: {condition}", stackTrace); // the game already wrote this line and its stack to Player.log; only the in-game console gets a copy
 					_inLogHandler = false;
 				}
 			};

@@ -59,6 +59,7 @@ namespace ONI_Together.Networking.Components
 				}
 			}
             NetworkConfig.TransportPacketSender.Flush();
+            DebugTools.DebugConsole.FlushAggregates();
         }
 
         private void OnApplicationQuit()

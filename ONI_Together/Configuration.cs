@@ -166,6 +166,18 @@ namespace ONI_Together
             set => Client.Discord.UseDiscordRichPresence = value;
         }
 
+        [Option("STRINGS.UI.CONFIGURATION.TITLES.MISC_SETTINGS.LOG_VERBOSITY", "STRINGS.UI.CONFIGURATION.TOOLTIPS.MISC_SETTINGS.LOG_VERBOSITY", "STRINGS.UI.CONFIGURATION.HEADERS.E_MISC_SETTINGS")]
+        [JsonIgnore]
+        public LogVerbosity LogVerbosity
+        {
+            get => Network.LogVerbosity;
+            set
+            {
+                Network.LogVerbosity = value;
+                DebugTools.DebugConsole.Verbosity = value;
+            }
+        }
+
         public static T GetHostProperty<T>(string propertyName)
         {
             return Instance.GetProperty<T>(Instance.Host, propertyName);
@@ -227,6 +239,7 @@ namespace ONI_Together
         public void OnOptionsChanged()
         {
             Instance = this;
+            DebugTools.DebugConsole.Verbosity = Network.LogVerbosity;
         }
     }
 
@@ -280,6 +293,16 @@ namespace ONI_Together
         [JsonProperty] public ServerTickRate TickRate { get; set; } = ServerTickRate.TPS_60;
     }
 
+    /// <summary>
+    /// How much ONI Together writes to Player.log; see DebugConsole.Verbosity.
+    /// </summary>
+    public enum LogVerbosity
+    {
+        Quiet = 0,
+        Normal = 1,
+        Verbose = 2,
+    }
+
     public enum ServerTickRate
     {
         TPS_20 = 0,
@@ -296,6 +319,7 @@ namespace ONI_Together
         [JsonProperty] public bool EnablePacketQueue { get; set; } = false;
         [JsonProperty] public int MaxPacketsPerSecond { get; set; } = 500;
         [JsonProperty] public bool BypassProtocolCompatibilityChecks { get; set; } = false;
+        [JsonProperty] public LogVerbosity LogVerbosity { get; set; } = LogVerbosity.Normal;
     }
 
     [Serializable]
