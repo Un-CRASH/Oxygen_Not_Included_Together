@@ -224,7 +224,7 @@ namespace ONI_Together.Networking.Components
 			if (++_ticksSinceLog >= LOG_EVERY_N_TICKS && totalSent > 0)
 			{
 				_ticksSinceLog = 0;
-				DebugConsole.Log($"[ConduitFlowSyncer] tick: pipes scanned={pipeCellsScanned}, visible={pipeCellsVisible}, updates sent={totalSent}, force={forceRefresh}");
+				if (DebugConsole.IsVerbose) DebugConsole.LogVerbose($"[ConduitFlowSyncer] tick: pipes scanned={pipeCellsScanned}, visible={pipeCellsVisible}, updates sent={totalSent}, force={forceRefresh}");
 			}
 		}
 

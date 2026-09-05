@@ -252,7 +252,7 @@ public class SpawnPrefabPacket : IPacket
                     go.AddOrGet<CreatureMultiplayerInitializer>();
                 }
 
-                DebugConsole.Log($"[SpawnPrefabPacket] Spawned entity '{go.name}' (NetId: {NetId}) at {Position}");
+                if (DebugConsole.IsVerbose) DebugConsole.LogVerbose($"[SpawnPrefabPacket] Spawned entity '{go.name}' (NetId: {NetId}) at {Position}");
                 
                 // Race condition guard: ONLY for loose substance/ore ground resources, NEVER destroy living creatures / plants / minions / buildings!
                 if (HasElementData || go.GetComponent<SubstanceChunk>() != null)

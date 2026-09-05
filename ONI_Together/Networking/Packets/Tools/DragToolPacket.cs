@@ -130,7 +130,7 @@ namespace ONI_Together.Networking.Packets.Tools
 				switch (ToolMode)
 				{
 					case DragToolMode.OnDragTool:
-						DebugConsole.Log($"[FilteredDragToolPacket] OnDispatched OnDragTool - cell: {cell}, distFromOrigin: {distFromOrigin}");
+						if (DebugConsole.IsVerbose) DebugConsole.LogVerbose($"[FilteredDragToolPacket] OnDispatched OnDragTool - cell: {cell}, distFromOrigin: {distFromOrigin}");
 						ToolInstance.OnDragTool(cell, distFromOrigin);
 						break;
 					case DragToolMode.OnDragComplete:

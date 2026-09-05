@@ -44,7 +44,7 @@ namespace ONI_Together.Networking
 				breakoff++;
 			}
 			hash += breakoff;
-			DebugConsole.Log($"Registered workable {go.PrefabID().ToString()} with id: {hash} for workable type {workable.GetType().Name} at cell {cell}");
+			if (DebugConsole.IsVerbose) DebugConsole.LogVerbose($"[NetIdHelper] Registered workable {go.PrefabID()} with id {hash} ({workable.GetType().Name}) at cell {cell}");
 			return hash;
 		}
 
@@ -74,8 +74,8 @@ namespace ONI_Together.Networking
 				}
 			}
 			hash += breakoff;
-			if(useBreakOff)
-				DebugConsole.Log($"Registered entity {go.PrefabID().ToString()} with id: {hash}");
+			if (useBreakOff && DebugConsole.IsVerbose)
+				DebugConsole.LogVerbose($"[NetIdHelper] Registered entity {go.PrefabID()} with id {hash}");
 			return hash;
 		}
 	}

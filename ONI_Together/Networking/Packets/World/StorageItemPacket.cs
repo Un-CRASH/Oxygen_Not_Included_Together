@@ -88,7 +88,7 @@ namespace ONI_Together.Networking.Packets.World
             if (!NetworkIdentityRegistry.TryGetComponent<Pickupable>(NetId, out var pickupable))
             {
                 PendingPickupNetIds.Add(NetId);
-                DebugConsole.LogWarning($"[StoreItemPacket] Pickupable NetId {NetId} not yet registered; queued pending removal");
+                DebugConsole.LogAggregated("PendingPickup.Store", $"[StoreItemPacket] Pickupable NetId {NetId} not yet registered; queued pending removal");
                 return;
             }
 

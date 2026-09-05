@@ -189,7 +189,7 @@ namespace ONI_Together.Networking.OxySync.Components
             try
             {
                 string workableTypeId = GetWorkableTypeId(workable);
-                DebugConsole.Log($"[WorkableSyncer] Worker has NetId {workerNetId} '{method}' on workable {workableNetId} : {workableTypeId}");
+                if (DebugConsole.IsVerbose) DebugConsole.LogVerbose($"[WorkableSyncer] {method} by worker {workerNetId} on {workable.GetType().Name} {workableNetId}");
                 CallClientRpc(nameof(RpcUpdateWorkable), method, workableNetId, workableTypeId, workerNetId);
             }
             catch (System.Exception ex)
@@ -302,19 +302,19 @@ namespace ONI_Together.Networking.OxySync.Components
 
             if (ClientSkippedWorkables.Contains(workable.GetType()))
             {
-                DebugConsole.Log($"[WorkableSyncer] [Client] Skipping '{method}' on {workable.GetProperName()}: {workable.GetType().Name} owns duplicant effects, which clients do not run");
+                DebugConsole.LogVerbose($"[WorkableSyncer] [Client] Skipping '{method}' on {workable.GetProperName()}: {workable.GetType().Name} owns duplicant effects, which clients do not run");
                 return;
             }
 
             if (method == MethodType.CompleteWork && ClientSkippedCompleteWork.Contains(workable.GetType()))
             {
-                DebugConsole.Log($"[WorkableSyncer] [Client] Skipping 'CompleteWork' on {workable.GetProperName()}: {workable.GetType().Name} completion is host-side");
+                DebugConsole.LogVerbose($"[WorkableSyncer] [Client] Skipping 'CompleteWork' on {workable.GetProperName()}: {workable.GetType().Name} completion is host-side");
                 return;
             }
 
             workableAuthorization[BuildAuthKey(workableNetId, workableTypeId, method)] = workerNetId;
 
-            DebugConsole.Log($"[WorkableSyncer] [Client] Worker has NetId {workerNetId} '{method}' on workable {workableNetId} : {workableTypeId}");
+            if (DebugConsole.IsVerbose) DebugConsole.LogVerbose($"[WorkableSyncer] [Client] {method} by worker {workerNetId} on {workable.GetType().Name} {workableNetId}");
 
             switch (method)
             {

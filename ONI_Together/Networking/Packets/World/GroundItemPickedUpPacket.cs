@@ -52,7 +52,7 @@ namespace ONI_Together.Networking.Packets.World
 			if (!NetworkIdentityRegistry.TryGetComponent<Pickupable>(NetId, out var pickupable))
 			{
 				PendingPickupNetIds.Add(NetId);
-				DebugConsole.LogWarning($"[GroundItemPickedUpPacket] Pickupable NetId {NetId} not yet registered; queued pending removal");
+				DebugConsole.LogAggregated("PendingPickup.Ground", $"[GroundItemPickedUpPacket] Pickupable NetId {NetId} not yet registered; queued pending removal");
 				return;
 			}
 

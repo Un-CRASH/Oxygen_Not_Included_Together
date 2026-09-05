@@ -250,7 +250,7 @@ namespace ONI_Together.Networking
 
 			if (!MultiplayerSession.ConnectedPlayers.TryGetValue(steamID, out var player) || player.Connection == null)
 			{
-				DebugConsole.LogWarning($"[PacketSender] No connection found for SteamID {steamID}");
+				DebugConsole.LogAggregated("PacketSender.NoConnection." + steamID, $"[PacketSender] No connection found for SteamID {steamID}");
 				return false;
 			}
 

@@ -92,7 +92,7 @@ namespace ONI_Together.Patches.World
 							};
 
 							PacketSender.SendToAllClients(packet);
-							DebugConsole.Log("Sent spawn resource packet with netid " + networkIdentity.NetId);
+							if (DebugConsole.IsVerbose) DebugConsole.LogVerbose("[WorldDamagePatch] Sent spawn resource packet with netid " + networkIdentity.NetId);
 						}
 					}
 				}

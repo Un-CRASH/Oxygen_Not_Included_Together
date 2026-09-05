@@ -14,7 +14,6 @@ namespace ONI_Together.Networking
 		private static readonly System.Random rng = new System.Random();
 
 		private static int _lookupFailCount = 0;
-		private static float _lastFailLogTime = 0f;
 
 		public static int Count => identities?.Count ?? 0;
 
@@ -67,7 +66,7 @@ namespace ONI_Together.Networking
 			else
 			{
 				identities.Add(netId, entity);
-				DebugConsole.Log($"[NetEntityRegistry] Registered overridden NetId {netId} for {entity.name}");
+				if (DebugConsole.IsVerbose) DebugConsole.LogVerbose($"[NetEntityRegistry] Registered overridden NetId {netId} for {entity.name}");
 			}
 		}
 		public static bool Exists(int netId) => identities.ContainsKey(netId);
@@ -114,11 +113,7 @@ namespace ONI_Together.Networking
 			if (!found)
 			{
 				_lookupFailCount++;
-				if (_lookupFailCount <= 3 || _lookupFailCount % 500 == 0 || Time.unscaledTime - _lastFailLogTime > 1f)
-				{
-					_lastFailLogTime = Time.unscaledTime;
-					DebugConsole.LogWarning($"[Registry] Lookup failed (#{_lookupFailCount}): NetId {netId} not found. Count: {identities.Count}");
-				}
+				DebugConsole.LogAggregated("Registry.LookupFailed", $"[Registry] Lookup failed (#{_lookupFailCount}): NetId {netId} not found. Count: {identities.Count}");
 			}
 			
 			if (entity.IsNullOrDestroyed() || entity.gameObject.IsNullOrDestroyed())

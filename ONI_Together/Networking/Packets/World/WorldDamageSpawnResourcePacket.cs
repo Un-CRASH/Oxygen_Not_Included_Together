@@ -85,7 +85,7 @@ namespace ONI_Together.Networking.Packets.World
 				GameObject dropped = element.substance.SpawnResource(Position, dropMass, Temperature, DiseaseIndex, DiseaseCount);
 				NetworkIdentity identity = dropped.GetComponent<NetworkIdentity>();
 				identity.OverrideNetId(NetId);
-				DebugConsole.Log("[WorldDamageSpawnResourcePacket] Synchronized Network ID");
+				DebugConsole.LogVerbose("[WorldDamageSpawnResourcePacket] Synchronized Network ID");
 
 				// First check GroundItemPickedUp, then PickupItem then StoreItem, TODO: Rope into 1 list
 				if (GroundItemPickedUpPacket.TryConsumePending(NetId) || StorageItemPacket.TryConsumePending(NetId))

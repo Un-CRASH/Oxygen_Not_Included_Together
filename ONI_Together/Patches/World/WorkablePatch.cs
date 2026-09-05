@@ -34,7 +34,7 @@ namespace ONI_Together.Patches.World
 				{
 					if (worker.GetNetId() == authorizedWokerNetId)
 					{
-						DebugConsole.Log($"[WorkablePatch] Client worker {worker.GetProperName()} is authorized to '{method}' on {workable.GetProperName()}");
+						if (DebugConsole.IsVerbose) DebugConsole.LogVerbose($"[WorkablePatch] Client worker {worker.GetProperName()} is authorized to '{method}' on {workable.GetProperName()}");
 						return true;
 					}
 				}

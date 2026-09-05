@@ -60,7 +60,7 @@ namespace ONI_Together.Networking.Packets.Core
 			using var ms = new MemoryStream(InnerPacketData);
 			using var reader = new BinaryReader(ms);
 			innerPacket.Deserialize(reader);
-			DebugConsole.Log("[HostBroadcastPacket] received packet of type " + innerPacket.GetType().Name+", dispatching");
+			if (DebugConsole.IsVerbose) DebugConsole.LogVerbose("[HostBroadcastPacket] received packet of type " + innerPacket.GetType().Name + ", dispatching");
 			//this packet should only be sent by clients to the host
 			if (MultiplayerSession.IsHost)
 			{

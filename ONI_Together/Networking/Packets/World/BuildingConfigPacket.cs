@@ -150,7 +150,7 @@ namespace ONI_Together.Networking.Packets.World
             // All handlers are now in the registry
             if (BuildingConfigHandlerRegistry.TryHandle(go, this))
 			{
-				DebugConsole.Log($"[BuildingConfigPacket] Handled by registry for {go.name}");
+				if (DebugConsole.IsVerbose) DebugConsole.LogVerbose($"[BuildingConfigPacket] Handled by registry for {go.name}");
                 return;
 			}
 

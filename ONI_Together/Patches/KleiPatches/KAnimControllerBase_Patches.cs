@@ -169,7 +169,7 @@ namespace ONI_Together.Patches.KleiPatches
 					if (MultiplayerSession.IsClient)
 						return TogglingOverrideFromPacket;
 
-					Console.WriteLine("sending addAnimOveridePacket");
+					DebugConsole.LogVerbose("[KAnimControllerBase_Patches] sending ToggleAnimOverridePacket (add)");
 					PacketSender.SendToAllClients(new ToggleAnimOverridePacket(__instance.gameObject, kanim_file, priority));
 					return kanim_file != null;
 				}
@@ -199,7 +199,7 @@ namespace ONI_Together.Patches.KleiPatches
 					if (MultiplayerSession.IsClient)
 						return TogglingOverrideFromPacket;
 
-					Console.WriteLine("sending removeAnimOveridePacket");
+					DebugConsole.LogVerbose("[KAnimControllerBase_Patches] sending ToggleAnimOverridePacket (remove)");
 					PacketSender.SendToAllClients(new ToggleAnimOverridePacket(__instance.gameObject, kanim_file));
 					return kanim_file != null;
 				}
