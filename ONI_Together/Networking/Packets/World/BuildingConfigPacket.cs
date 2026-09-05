@@ -123,8 +123,9 @@ namespace ONI_Together.Networking.Packets.World
 				}
 
                 // HOST RELAY: If host received this from a client, re-broadcast to the other clients.
-                // The sender is left out: it would only drop the packet again (Sender == local id),
-                // and during a filter burst that echo doubled the traffic on its channel.
+                // The sender is left out. Serialize() stamps every send with the local id, so the
+                // relayed copy arrived at its own sender stamped as the host's and was applied,
+                // not dropped - that echo is what closed the filter ping-pong loop.
                 if (MultiplayerSession.IsHost)
                 {
                     PacketSender.SendToAllExcluding(this, new HashSet<ulong> { MultiplayerSession.HostUserID, Sender });
