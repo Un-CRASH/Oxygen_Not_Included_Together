@@ -107,6 +107,13 @@ public static class SaveHelper
 			/// Grid.Radiation[cell] on a null pointer (RadiationBalanceDisplayer.GetTooltip)
 			/// and the game showed its crash screen mid hard sync. Dropping the selection
 			/// closes the details screen before the sim goes away.
+			///
+			/// An open overlay is the same problem on worker threads: SimDebugView.Update
+			/// keeps scheduling its colour pass while the mode is not None, and that pass
+			/// reads Grid arrays the reload has freed. With the oxygen overlay open a client
+			/// logged 21 139 NullReferenceExceptions in GetOxygenMapColour, about 460 a
+			/// second, from the moment a hard sync began until the player gave up a minute
+			/// later. Switching to None first is what closing the overlay does anyway.
 			/// </summary>
 			private static void CloseWorldUiBeforeReload()
 			{
@@ -114,10 +121,14 @@ public static class SaveHelper
 				{
 					if (SelectTool.Instance != null)
 						SelectTool.Instance.Select(null, true);
+
+					var overlay = OverlayScreen.Instance;
+					if (overlay != null && overlay.mode != OverlayModes.None.ID)
+						overlay.ToggleOverlay(OverlayModes.None.ID, false);
 				}
 				catch (System.Exception ex)
 				{
-					DebugConsole.LogWarning($"[SaveHelper] Could not clear the selection before reload: {ex.Message}");
+					DebugConsole.LogWarning($"[SaveHelper] Could not close the world UI before reload: {ex.Message}");
 				}
 			}
 	public static void ShowMessageAndReturnToMainMenu(string msg)
