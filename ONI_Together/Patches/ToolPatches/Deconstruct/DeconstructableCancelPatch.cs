@@ -22,19 +22,15 @@ namespace ONI_Together.Patches.ToolPatches.Deconstruct
 			try
 			{
 				if (!MultiplayerSession.InActiveSession) return;
-				if (BuildingActionPacket.ProcessingIncoming) return;
+				if (BuildingActionCellPacket.ProcessingIncoming) return;
 				// Drag path already syncs via CancelPacket; skip here to avoid double-send.
 				if (DragToolPacket.ProcessingIncoming) return;
 
 				var identity = __instance.GetComponent<NetworkIdentity>();
 				if (identity == null || identity.NetId == 0) return;
 
-				PacketSender.SendToAllOtherPeers(new BuildingActionPacket
-				{
-					NetId = identity.NetId,
-					Action = BuildingActionKind.CancelDeconstruct,
-				});
-				DebugConsole.Log($"[BuildingAction] send NetId={identity.NetId} kind=CancelDeconstruct src=CancelPatch");
+				PacketSender.SendToAllOtherPeers(new BuildingActionCellPacket(identity, BuildingActionKind.CancelDeconstruct));
+				if (DebugConsole.IsVerbose) DebugConsole.LogVerbose($"[BuildingAction] send NetId={identity.NetId} kind=CancelDeconstruct src=CancelPatch");
 			}
 			catch (System.Exception ex)
 			{

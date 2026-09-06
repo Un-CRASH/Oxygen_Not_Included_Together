@@ -24,7 +24,7 @@ namespace ONI_Together.Patches.ToolPatches.Deconstruct
 			try
 			{
 				if (!MultiplayerSession.InActiveSession) return;
-				if (BuildingActionPacket.ProcessingIncoming) return;
+				if (BuildingActionCellPacket.ProcessingIncoming) return;
 				// Drag path already has its own sync via DeconstructPacket; don't double-send.
 				// This patch exists specifically for non-drag entry points.
 				if (DragToolPacket.ProcessingIncoming) return;
@@ -33,12 +33,8 @@ namespace ONI_Together.Patches.ToolPatches.Deconstruct
 				var identity = __instance.GetComponent<NetworkIdentity>();
 				if (identity == null || identity.NetId == 0) return;
 
-				PacketSender.SendToAllOtherPeers(new BuildingActionPacket
-				{
-					NetId = identity.NetId,
-					Action = BuildingActionKind.QueueDeconstruct,
-				});
-				DebugConsole.Log($"[BuildingAction] send NetId={identity.NetId} kind=QueueDeconstruct src=QueuePatch");
+				PacketSender.SendToAllOtherPeers(new BuildingActionCellPacket(identity, BuildingActionKind.QueueDeconstruct));
+				if (DebugConsole.IsVerbose) DebugConsole.LogVerbose($"[BuildingAction] send NetId={identity.NetId} kind=QueueDeconstruct src=QueuePatch");
 			}
 			catch (System.Exception ex)
 			{
