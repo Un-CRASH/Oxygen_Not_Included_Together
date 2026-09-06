@@ -11,7 +11,6 @@ namespace ONI_Together.Networking
 	public static class NetworkIdentityRegistry
 	{
 		private static readonly Dictionary<int, NetworkIdentity> identities = new Dictionary<int, NetworkIdentity>();
-		private static readonly System.Random rng = new System.Random();
 
 		private static int _lookupFailCount = 0;
 
@@ -25,51 +24,57 @@ namespace ONI_Together.Networking
 			do
 			{
 				id = Guid.NewGuid().GetHashCode() + attempt++;
-			} while (identities.ContainsKey(id));
+			} while (id == 0 || Exists(id));
 
 			identities[id] = entity;
 			return id;
 		}
 
-		public static void Unregister(int netId)
+		public static bool Unregister(int netId, NetworkIdentity owner)
 		{
 			using var _ = Profiler.Scope();
 
-			identities.Remove(netId);
+			// A stale/overridden identity must never remove the new owner of its ID.
+			return Owns(netId, owner) && identities.Remove(netId);
 		}
 
+		public static bool Owns(int netId, NetworkIdentity owner) =>
+			identities.TryGetValue(netId, out var existing) && ReferenceEquals(existing, owner);
 
-		public static void RegisterExisting(NetworkIdentity entity, int netId)
+
+		public static int RegisterExisting(NetworkIdentity entity, int netId)
 		{
 			using var _ = Profiler.Scope();
 
-			if (!identities.ContainsKey(netId))
+			if (netId == 0) return Register(entity);
+			if (TryGet(netId, out var existing, logFailure: false) && !ReferenceEquals(existing, entity))
 			{
-				identities[netId] = entity;
-				//DebugConsole.Log($"[NetEntityRegistry] Registered existing entity with net id: {netId}");
+				// Duplicate saved/cloned IDs cannot address two objects. The host saves
+				// and announces this new ID; a client later adopts the host's mapping.
+				int replacement = Register(entity);
+				DebugConsole.LogAggregated("Registry.LiveCollision", $"[Registry] NetId {netId} belongs to {existing.name}; assigned {replacement} to {entity.name} at cell {Grid.PosToCell(entity.gameObject)}");
+				return replacement;
 			}
-			//else
-			//{
-			//    DebugConsole.LogWarning($"[NetEntityRegistry] NetId {netId} already registered. Skipping duplicate registration.");
-			//}
+			identities[netId] = entity;
+			return netId;
 		}
 
 		public static void RegisterOverride(NetworkIdentity entity, int netId)
 		{
 			using var _ = Profiler.Scope();
 
-			if (identities.ContainsKey(netId))
+			if (netId == 0) return;
+			if (TryGet(netId, out var existing, logFailure: false) && !ReferenceEquals(existing, entity))
 			{
-				DebugConsole.LogWarning($"[NetEntityRegistry] Overwriting existing entity for NetId {netId}");
-				identities[netId] = entity;
+				// A host mapping wins over a locally generated ID, but the displaced
+				// object stays alive and indexed until its own mapping arrives.
+				int replacement = Register(existing);
+				existing.OverrideNetId(replacement);
+				DebugConsole.LogAggregated("Registry.OverrideCollision", $"[Registry] Host NetId {netId} adopted by {entity.name}; moved {existing.name} to {replacement}");
 			}
-			else
-			{
-				identities.Add(netId, entity);
-				if (DebugConsole.IsVerbose) DebugConsole.LogVerbose($"[NetEntityRegistry] Registered overridden NetId {netId} for {entity.name}");
-			}
+			identities[netId] = entity;
 		}
-		public static bool Exists(int netId) => identities.ContainsKey(netId);
+		public static bool Exists(int netId) => TryGet(netId, out var entity, logFailure: false);
 
 		/// <summary>
 		/// Re-index every live NetworkIdentity in the scene under the NetId it carries.
@@ -93,24 +98,24 @@ namespace ONI_Together.Networking
 			foreach (var identity in UnityEngine.Object.FindObjectsByType<NetworkIdentity>(FindObjectsInactive.Include, FindObjectsSortMode.InstanceID))
 			{
 				if (identity == null || identity.NetId == 0) continue;
-				if (identities.ContainsKey(identity.NetId)) { collisions++; continue; }
-				identities[identity.NetId] = identity;
+				if (Exists(identity.NetId)) collisions++;
+				identity.RegisterIdentity();
 			}
 
 			if (collisions > 0)
-				DebugConsole.LogWarning($"[NetEntityRegistry] {collisions} objects share a NetId with another live object; the first one found keeps the id");
+				DebugConsole.LogWarning($"[NetEntityRegistry] {collisions} objects share a NetId with another live object; each object now has its own id");
 
 			return identities.Count;
 		}
 
 
 
-		public static bool TryGet(int netId, out NetworkIdentity entity)
+		public static bool TryGet(int netId, out NetworkIdentity entity, bool logFailure = true)
 		{
 			using var _ = Profiler.Scope();
 
 			bool found = identities.TryGetValue(netId, out entity);
-			if (!found)
+			if (!found && logFailure)
 			{
 				_lookupFailCount++;
 				DebugConsole.LogAggregated("Registry.LookupFailed", $"[Registry] Lookup failed (#{_lookupFailCount}): NetId {netId} not found. Count: {identities.Count}");

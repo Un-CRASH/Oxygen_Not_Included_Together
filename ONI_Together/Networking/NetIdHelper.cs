@@ -8,7 +8,7 @@ namespace ONI_Together.Networking
 	{
 		/// <summary>
 		/// Generates a deterministic NetID for a building based on its location and object layer.
-		/// Range: 1,000,000,000+
+		/// Uses stable prefab/layer/cell data, independent of local spawn order.
 		/// </summary>
 		public static int GetDeterministicBuildingId(GameObject go)
 		{
@@ -19,10 +19,13 @@ namespace ONI_Together.Networking
 			int cell = Grid.PosToCell(go);
 			if (!Grid.IsValidCell(cell)) return 0;
 
-			if (!go.TryGetComponent<Building>(out var building))
-				return cell.GetHashCode() ^ go.PrefabID().GetHashCode();
+			if (!go.TryGetComponent<Building>(out var building) || building.Def == null)
+				return 0;
 
-			return cell.GetHashCode() ^ go.PrefabID().GetHashCode() ^ building.Def.ObjectLayer.GetHashCode();
+			int hash = StableHash("Building|" + go.PrefabID().Name + "|" + building.GetType().FullName);
+			hash = unchecked((hash * 16777619) ^ (int)building.Def.ObjectLayer);
+			hash = unchecked((hash * 16777619) ^ cell);
+			return hash == 0 ? int.MinValue : hash;
 		}
 		public static int GetDeterministicWorkableId(GameObject go)
 		{
@@ -75,12 +78,22 @@ namespace ONI_Together.Networking
 		{
 			using var _ = Profiler.Scope();
 
-			if (go == null || !go.TryGetComponent<PrimaryElement>(out var primaryElement))
-				return 0;
+			if (go == null) return 0;
 
 			int cell = Grid.PosToCell(go);
 			if (!Grid.IsValidCell(cell))
 				return 0;
+
+			// Keep the pickupable calculation below: moving stacks are paired by the
+			// save/spawn packets. Static entities must not hash translated names,
+			// temperature or mass, nor borrow an ID from local registration order.
+			if (!go.TryGetComponent<Pickupable>(out var pickupable))
+			{
+				int staticId = StableHash("Entity|" + go.PrefabID().Name);
+				staticId = unchecked((staticId * 16777619) ^ cell);
+				return staticId == 0 ? int.MinValue : staticId;
+			}
+			if (!go.TryGetComponent<PrimaryElement>(out var primaryElement)) return 0;
 
 			int hash = go.PrefabID().GetHashCode();
 			if(useCell)

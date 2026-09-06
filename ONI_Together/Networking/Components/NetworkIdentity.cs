@@ -27,7 +27,7 @@ namespace ONI_Together.Networking.Components
 		{
 			using var _ = Profiler.Scope();
 
-			if (IsRegistered)
+			if (IsRegistered && NetworkIdentityRegistry.Owns(NetId, this))
 				return;
 
 			if (Grid.WidthInCells == 0)
@@ -36,7 +36,6 @@ namespace ONI_Together.Networking.Components
 				return;
 				}
 
-				int netIdBefore = NetId;
 
 			// Try to handle deterministic ID for buildings first
 			if (NetId == 0)
@@ -80,14 +79,13 @@ namespace ONI_Together.Networking.Components
 			}
 			else
 			{
-				NetworkIdentityRegistry.RegisterExisting(this, NetId);
+				NetId = NetworkIdentityRegistry.RegisterExisting(this, NetId);
 				// DebugConsole.Log($"[NetworkIdentity] Registered Existing NetId {NetId} for {gameObject.name}");
 			}
 			IsRegistered = true;
 
 			// Any NetworkBehaviour that spawned before this ran was indexed under NetId 0.
-			if (netIdBefore == 0)
-			    OxySyncManager.RekeyBehaviours(gameObject, NetId);
+			OxySyncManager.RekeyBehaviours(gameObject, NetId);
 			}
 
 		/// <summary>
@@ -98,14 +96,18 @@ namespace ONI_Together.Networking.Components
 		{
 			using var _ = Profiler.Scope();
 
-			// Unregister old NetId
-			NetworkIdentityRegistry.Unregister(NetId);
+			if (netIdOverride == 0) return;
+
+			// Unregister only our own entry; another object may have adopted the ID.
+			if (NetId != netIdOverride && NetworkIdentityRegistry.Unregister(NetId, this))
+				RemoteProgressRegistry.Clear(NetId, hideTarget: false);
 
 			// Override internal value
 			NetId = netIdOverride;
 
 			// Re-register with new NetId
 			NetworkIdentityRegistry.RegisterOverride(this, netIdOverride);
+			IsRegistered = true;
 
 			// The sync manager filed our behaviours under the old NetId.
 			OxySyncManager.RekeyBehaviours(gameObject, netIdOverride);
@@ -118,8 +120,9 @@ namespace ONI_Together.Networking.Components
 		{
 			using var _ = Profiler.Scope();
 
-			RemoteProgressRegistry.Clear(NetId);
-			NetworkIdentityRegistry.Unregister(NetId);
+			if (NetworkIdentityRegistry.Unregister(NetId, this))
+				RemoteProgressRegistry.Clear(NetId, hideTarget: false);
+			IsRegistered = false;
 			//DebugConsole.Log($"[NetworkIdentity] Unregistered NetId {NetId} for {gameObject.name}");
 			base.OnCleanUp();
 		}

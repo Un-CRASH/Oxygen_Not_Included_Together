@@ -146,9 +146,15 @@ namespace ONI_Together.Networking.OxySync.Components
 				_behaviours.Add(behaviour);
 
             int netId = behaviour.NetId;
-            ResolveBehaviourId(behaviour, netId);
-            behaviour.RegisteredNetId = netId;
-            _behaviourLookup[(netId, behaviour.BehaviourId)] = behaviour;
+            // Components can spawn before their saved identity owns a registry entry;
+            // RegisterIdentity will index them once their real address is available.
+            if (netId != 0 && NetworkIdentityRegistry.TryGet(netId, out var owner, logFailure: false) &&
+                owner.gameObject == behaviour.gameObject)
+            {
+                ResolveBehaviourId(behaviour, netId);
+                behaviour.RegisteredNetId = netId;
+                _behaviourLookup[(netId, behaviour.BehaviourId)] = behaviour;
+            }
 
 			if (behaviour.GetType().GetCustomAttribute<FixedInterestGroupAttribute>() != null)
 				_explicitGroupTypes.Add(behaviour.GetType());
@@ -453,6 +459,9 @@ namespace ONI_Together.Networking.OxySync.Components
         /// </summary>
         private void ResolveBehaviourId(NetworkBehaviour behaviour, int netId)
         {
+            // A temporary collision at the old NetId must not permanently shift
+            // the component's wire type when its identity is assigned/overridden.
+            behaviour.BehaviourId = (behaviour.GetType().FullName ?? behaviour.GetType().Name).GetHashCode();
             int id = behaviour.BehaviourId;
 
             while (_behaviourLookup.TryGetValue((netId, id), out var existing))

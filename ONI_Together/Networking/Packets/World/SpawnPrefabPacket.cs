@@ -219,16 +219,14 @@ public class SpawnPrefabPacket : IPacket
                                                     }
 
                         var netIdComp = go.AddOrGet<NetworkIdentity>();
-                        netIdComp.NetId = NetId;
                         netIdComp.OverrideNetId(NetId);
                     }
                     else
                     {
                         go = Util.KInstantiate(prefab, Position);
                         var netIdComp = go.AddOrGet<NetworkIdentity>();
-                                                netIdComp.NetId = NetId;
-                                                ActivateReplica(go);
-                                                netIdComp.OverrideNetId(NetId);
+                        netIdComp.OverrideNetId(NetId);
+                        ActivateReplica(go);
                     }
                 }
             }
