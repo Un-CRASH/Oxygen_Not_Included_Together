@@ -6,7 +6,6 @@ using ONI_Together.Networking.Packets.World;
 using ONI_Together.Networking.States;
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using Shared.Profiling;
 using UnityEngine;
 
@@ -61,8 +60,10 @@ namespace ONI_Together.Networking
 			}
 
 			DebugConsole.Log($"[HardSync] Starting hard sync for {numberOfClientsAtTimeOfSync} client(s)...");
-			CoroutineRunner.RunOne(HardSyncCoroutine(consumeDailyUse));
-			CoroutineRunner.RunOne(ReadyWatchdog(++_generation));
+			int generation = ++_generation;
+			_unreadySince.Clear();
+			CoroutineRunner.RunOne(HardSyncCoroutine(generation, consumeDailyUse));
+			CoroutineRunner.RunOne(ReadyWatchdog(generation));
 		}
 
 		/// <summary>
@@ -81,6 +82,25 @@ namespace ONI_Together.Networking
 		/// </summary>
 		private static int _generation;
 
+		// Transport IDs are reused after a disconnect. The new player must not inherit
+		// the previous connection's timeout (the logs showed 120 s timeouts after 1 s).
+		private static readonly Dictionary<MultiplayerPlayer, float> _unreadySince = new();
+
+		internal static void ForgetPlayer(MultiplayerPlayer player)
+		{
+			if (player != null)
+				_unreadySince.Remove(player);
+		}
+
+		internal static void Reset()
+		{
+			++_generation;
+			_unreadySince.Clear();
+			hardSyncInProgress = false;
+			hardSyncDoneThisCycle = false;
+			numberOfClientsAtTimeOfSync = 0;
+		}
+
 		/// <summary>
 		/// Runs from a hard sync until the next one, so a straggler that reports Unready
 		/// late - when it finally loads the save - is covered as well: the clock starts
@@ -90,34 +110,33 @@ namespace ONI_Together.Networking
 		/// </summary>
 		private static IEnumerator ReadyWatchdog(int generation)
 		{
-			var unreadySince = new Dictionary<ulong, float>();
-
 			while (_generation == generation && MultiplayerSession.IsHost && MultiplayerSession.InActiveSession)
 			{
 				// Also lets HardSyncCoroutine mark everyone unready before the first look.
 				yield return new WaitForSecondsRealtime(2f);
-				if (_generation != generation) yield break;
+				if (_generation != generation || !MultiplayerSession.IsHost || !MultiplayerSession.InActiveSession)
+					yield break;
 
 				float now = Time.unscaledTime;
 				bool released = false;
-				foreach (var player in MultiplayerSession.ConnectedPlayers.Values.ToList())
+				foreach (var player in MultiplayerSession.ConnectedPlayers.Values)
 				{
 					if (player.PlayerId == MultiplayerSession.HostUserID) continue;
 					if (player.readyState == ClientReadyState.Ready)
 					{
-						unreadySince.Remove(player.PlayerId);
+						_unreadySince.Remove(player);
 						continue;
 					}
-					if (!unreadySince.TryGetValue(player.PlayerId, out float since))
+					if (!_unreadySince.TryGetValue(player, out float since))
 					{
-						unreadySince[player.PlayerId] = now;
+						_unreadySince[player] = now;
 						continue;
 					}
 					if (now - since < ReadyTimeoutSeconds) continue;
 
 					DebugConsole.LogWarning($"[HardSync] {player.PlayerName} ({player.PlayerId}) did not report ready within {ReadyTimeoutSeconds:F0} s; continuing without waiting for them");
 					ReadyManager.SetPlayerReadyState(player, ClientReadyState.Ready);
-					unreadySince.Remove(player.PlayerId);
+					_unreadySince.Remove(player);
 					released = true;
 				}
 
@@ -126,7 +145,7 @@ namespace ONI_Together.Networking
 			}
 		}
 
-		private static IEnumerator HardSyncCoroutine(bool consumeDailyUse = false)
+		private static IEnumerator HardSyncCoroutine(int generation, bool consumeDailyUse = false)
 		{
 			using var _ = Profiler.Scope();
 
@@ -141,6 +160,7 @@ namespace ONI_Together.Networking
 			int chunkCount = Mathf.CeilToInt(fileSize / (float)chunkSize);
 			float estimatedTransferDuration = chunkCount * SaveFileRequestPacket.SAVE_DATA_SEND_DELAY;
 			yield return new WaitForSecondsRealtime(estimatedTransferDuration * numberOfClientsAtTimeOfSync);
+			if (_generation != generation) yield break;
 
 			hardSyncDoneThisCycle = consumeDailyUse;
             hardSyncInProgress = false;

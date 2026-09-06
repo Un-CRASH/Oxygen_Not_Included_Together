@@ -232,6 +232,7 @@ namespace ONI_Together.Networking.Transport.Lan
                 if (MultiplayerSession.ConnectedPlayers.TryGetValue(clientId, out var player))
                 {
                     player.Connection = null;
+                    GameServerHardSync.ForgetPlayer(player);
                     MultiplayerSession.ConnectedPlayers.Remove(clientId);
                     DebugConsole.Log("[LiteNetLibServer] Player " + clientId + " disconnected. Reason: " + disconnectInfo.Reason);
                 }
@@ -338,9 +339,19 @@ namespace ONI_Together.Networking.Transport.Lan
                 _peersByClientId.Remove(clientId);
                 _clientIdByPeerId.Remove(peer.Id);
                 ClientList.Remove(clientId);
-                MultiplayerSession.ConnectedPlayers.Remove(clientId);
+                if (MultiplayerSession.ConnectedPlayers.TryGetValue(clientId, out var player))
+                {
+                    player.Connection = null;
+                    GameServerHardSync.ForgetPlayer(player);
+                    MultiplayerSession.ConnectedPlayers.Remove(clientId);
+                }
                 _peerStatsPrev.Remove(peer.Id);
                 DebugConsole.Log("[LiteNetLibServer] Kicked client: " + clientId);
+
+                // The peer mapping is gone before its disconnect callback runs, so
+                // release the ready wait here as well as on remote disconnects.
+                ReadyManager.RefreshReadyState();
+                MultiplayerSession.RefreshAllPlayerCursors();
             }
         }
 
