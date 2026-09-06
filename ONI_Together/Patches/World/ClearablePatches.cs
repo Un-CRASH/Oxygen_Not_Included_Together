@@ -48,6 +48,7 @@ namespace ONI_Together.Patches.World
 				if (ClearPacket.ProcessingIncoming) return;
 				if (!MultiplayerSession.InActiveSession) return;
 				if (__instance == null || __instance.gameObject == null) return;
+				if (IsStored(__instance)) return;
 
 				Send(__instance, true);
 			}
@@ -68,6 +69,18 @@ namespace ONI_Together.Patches.World
 
 				Send(__instance, false);
 			}
+		}
+
+		/// <summary>
+		/// An item inside a storage has no counterpart on clients (StorageItemPacket destroys
+		/// it there), so a mark on it can resolve nowhere. SweepBotStation.OnStorageChanged
+		/// re-marks everything in its bin on every change: 41 499 such packets reached the
+		/// host in one session, none resolved, and each was relayed to every client.
+		/// Only marks are skipped: a cancel for an item some client still holds must arrive.
+		/// </summary>
+		private static bool IsStored(Clearable clearable)
+		{
+			return clearable.TryGetComponent<Pickupable>(out var pickupable) && pickupable.storage != null;
 		}
 
 		private static void Send(Clearable clearable, bool marked)

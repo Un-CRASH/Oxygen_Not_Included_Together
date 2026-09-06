@@ -41,11 +41,11 @@ namespace ONI_Together.Networking.Packets.Tools.Clear
 		{
 			using var _ = Profiler.Scope();
 
+			Clearable target = null;
 			try
 			{
 				ProcessingIncoming = true;
 
-				Clearable target = null;
 				if (NetId != 0 && NetworkIdentityRegistry.TryGet(NetId, out var identity) && identity != null)
 				{
 					target = identity.GetComponent<Clearable>();
@@ -73,7 +73,7 @@ namespace ONI_Together.Networking.Packets.Tools.Clear
 				}
 				else
 				{
-					DebugConsole.LogWarning($"[ClearableActionPacket] Target not found (NetId={NetId}, Cell={Cell})");
+					DebugConsole.LogAggregated("ClearableAction.NotFound", $"[ClearableActionPacket] Target not found (NetId={NetId}, Cell={Cell})");
 				}
 			}
 			catch (System.Exception ex)
@@ -85,8 +85,9 @@ namespace ONI_Together.Networking.Packets.Tools.Clear
 				ProcessingIncoming = false;
 			}
 
-			// Host relays client actions to other clients
-			if (MultiplayerSession.IsHost)
+			// Host relays client actions to other clients. An item the host cannot find by
+			// id or by cell is local to the sender; the other clients cannot have it either.
+			if (MultiplayerSession.IsHost && target != null)
 			{
 				PacketSender.SendToAllClients(this);
 			}
