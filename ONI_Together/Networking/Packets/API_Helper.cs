@@ -3,6 +3,7 @@ using ONI_Together.Networking.Packets.Architecture;
 using ONI_Together.Networking.Packets.Core;
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -14,6 +15,8 @@ namespace ONI_Together.Networking.Packets
 {
 	internal class API_Helper
 	{
+		private static readonly ConcurrentDictionary<Type, int> PacketHashes = new();
+
 		public static Type CreateModApiPacketType(Type modPacketType)
 		{
 			using var _ = Profiler.Scope();
@@ -27,6 +30,12 @@ namespace ONI_Together.Networking.Packets
 		{
 			using var _ = Profiler.Scope();
 
+			// Type identity is immutable. Hash once, including sends from worker threads.
+			return PacketHashes.GetOrAdd(type, ComputePacketHash);
+		}
+
+		private static int ComputePacketHash(Type type)
+		{
 			var identity = type.FullName!;
 			using var sha256 = SHA256.Create();
 			var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(identity));
