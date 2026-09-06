@@ -58,9 +58,19 @@ namespace ONI_Together.Networking.Components
 					ONI_Together.Misc.World.SaveChunkAssembler.CheckInactiveTransfers();
 				}
 			}
-            NetworkConfig.TransportPacketSender.Flush();
             DebugTools.DebugConsole.FlushAggregates();
         }
+
+		private void LateUpdate()
+		{
+			using var _ = Profiler.Scope();
+
+			// End of the frame's network work: whatever the patches and syncers sent during
+			// Update leaves in this frame's batches (see TransportPacketSender). Components on
+			// this object whose LateUpdate runs after this one (the conduit and bulk flushes)
+			// wait one frame; that is 16-33 ms against the minutes this replaces.
+			NetworkConfig.TransportPacketSender.Flush();
+		}
 
         private void OnApplicationQuit()
 		{

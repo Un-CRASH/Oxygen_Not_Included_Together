@@ -121,11 +121,19 @@ namespace ONI_Together.Networking
 
         private static void StopSteamworks()
         {
+            // What this frame queued is handed to the transport before the connection
+            // closes (best effort: the transport sends from its own thread).
+            TransportPacketSender.Flush();
             SteamLobby.LeaveLobby();
+            TransportPacketSender.Discard();
         }
 
         private static void StopRaw()
         {
+            // What this frame queued is handed to the transport before the connection
+            // closes (best effort: the transport sends from its own thread).
+            TransportPacketSender.Flush();
+
             if (MultiplayerSession.IsHost)
                 GameServer.Shutdown();
 
@@ -136,6 +144,7 @@ namespace ONI_Together.Networking
             MultiplayerSession.Clear();
 
             SelectToolPatch.UpdateColor();
+            TransportPacketSender.Discard();
             DebugConsole.FlushAggregates(force: true);
         }
 

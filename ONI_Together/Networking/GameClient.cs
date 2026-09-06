@@ -140,6 +140,11 @@ namespace ONI_Together.Networking
 		{
 			using var _ = Profiler.Scope();
 
+			// The reload path calls this straight from a frame's Update; the batch that
+			// frame filled is handed to the transport before the peer closes. Best effort:
+			// LiteNetLib sends from its own thread, so what Stop cuts off is lost, as it
+			// was before batching.
+			NetworkConfig.TransportPacketSender.Flush();
 			NetworkConfig.TransportClient.Disconnect();
 		}
 

@@ -97,6 +97,7 @@ namespace ONI_Together.Networking
 
 			SetState(ServerState.Stopped);
 
+			NetworkConfig.TransportPacketSender.Flush();
 			NetworkConfig.TransportServer.CloseConnections();
 			NetworkConfig.TransportServer.Stop();
 			MultiplayerSession.IsHost = false;

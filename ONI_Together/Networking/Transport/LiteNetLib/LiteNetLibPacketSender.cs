@@ -67,6 +67,13 @@ namespace ONI_Together.Networking.Transport.Lan
         private const byte DefaultChannel = 0;
         private const byte PriorityChannel = 1;
 
+        /// <summary>
+        /// The reliable-ordered channel holds 64 packets in flight per round trip
+        /// regardless of size, so the base class packs a frame's reliable packets into
+        /// one (see TransportPacketSender).
+        /// </summary>
+        protected override bool SupportsCoalescing => true;
+
         private static bool IsPriority(PacketSendMode sendType, IPacket packet)
         {
             return (sendType & PacketSendMode.Priority) != 0 || packet is IPriorityPacket;

@@ -41,9 +41,10 @@ namespace ONI_Together.Networking.Packets.Architecture
 		/// already drops rather than queues while not ready, and the state those packets
 		/// describe is in the save the client is about to load.
 		///
-		/// BulkSenderPacket and ChunkedPacket are containers. Chunked re-enters
-		/// HandleIncoming, so it is gated by the same check; Bulk dispatches its inner
-		/// packets directly and applies ShouldDispatchWithoutWorld to each of them itself.
+		/// BulkSenderPacket, ChunkedPacket and CoalescedPacket are containers. Chunked and
+		/// Coalesced re-enter HandleIncoming, so their contents are gated by the same
+		/// check; Bulk dispatches its inner packets directly and applies
+		/// ShouldDispatchWithoutWorld to each of them itself.
 		/// </summary>
 		private static readonly HashSet<Type> AllowedWithoutWorld = new HashSet<Type>
 		{
@@ -74,6 +75,7 @@ namespace ONI_Together.Networking.Packets.Architecture
 			// containers
 			typeof(BulkSenderPacket),
 			typeof(ChunkedPacket),
+			typeof(CoalescedPacket),
 		};
 
 		/// <summary>

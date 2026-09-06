@@ -19,9 +19,10 @@ namespace ONI_Together.Networking
         Unreliable = 0,
 
         /// <summary>
-        /// Disables packet buffering/coalescing for this send.
-        /// The packet will be flushed immediately instead of waiting to be grouped with others.
-        /// Use sparingly, typically for latency-sensitive messages.
+        /// Disables the transport's own send buffering for this packet (Steam's Nagle).
+        /// The mod's per-frame packing of reliable packets (TransportPacketSender) is not
+        /// affected by this flag; the priority lane and the Coalesce Reliable Packets
+        /// option decide that.
         /// </summary>
         Immediate = 1,
 

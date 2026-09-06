@@ -222,6 +222,7 @@ namespace ONI_Together.Networking.Transport.Lan
         {
             using var _ = Profiler.Scope();
 
+            _peerStatsPrev.Remove(peer.Id);
             if (_clientIdByPeerId.TryGetValue(peer.Id, out ulong clientId))
             {
                 _peersByClientId.Remove(clientId);
@@ -271,6 +272,8 @@ namespace ONI_Together.Networking.Transport.Lan
             _peersByClientId.Clear();
             _clientIdByPeerId.Clear();
             ClientList.Clear();
+            _peerStatsPrev.Clear();
+            _lastNetStatsReport = 0f;
 
             while (_incomingPackets.TryDequeue(out var _)) { }
 
@@ -292,6 +295,7 @@ namespace ONI_Together.Networking.Transport.Lan
             _peersByClientId.Clear();
             _clientIdByPeerId.Clear();
             ClientList.Clear();
+            _peerStatsPrev.Clear();
             ClientList.Add(1);
         }
 
@@ -335,6 +339,7 @@ namespace ONI_Together.Networking.Transport.Lan
                 _clientIdByPeerId.Remove(peer.Id);
                 ClientList.Remove(clientId);
                 MultiplayerSession.ConnectedPlayers.Remove(clientId);
+                _peerStatsPrev.Remove(peer.Id);
                 DebugConsole.Log("[LiteNetLibServer] Kicked client: " + clientId);
             }
         }
@@ -364,6 +369,47 @@ namespace ONI_Together.Networking.Transport.Lan
             _srvLastMsgIn = (int)totalPacketsIn;
             _srvLastMsgOut = (int)totalPacketsOut;
             _srvLastBwPollTime = now;
+
+            if (_lastNetStatsReport <= 0f)
+                _lastNetStatsReport = now;
+            if (now - _lastNetStatsReport >= NetStats.ReportIntervalSeconds)
+            {
+                _lastNetStatsReport = now;
+                ReportNetStats(now);
+            }
+        }
+
+        private float _lastNetStatsReport;
+        private readonly Dictionary<int, LiteNetLibPeerStats.Sample> _peerStatsPrev = new();
+
+        /// <summary>
+        /// One line per client every 30 s: round trip, loss in the window, and how many
+        /// reliable packets still wait in each lane. The queue depth is the number that
+        /// says whether the world stream keeps up; it was invisible while the stream fell
+        /// minutes behind. A peer's first window only takes the baseline.
+        /// </summary>
+        private void ReportNetStats(float now)
+        {
+            try
+            {
+                foreach (var peer in _server.ConnectedPeerList)
+                {
+                    var cur = LiteNetLibPeerStats.Take(peer, now);
+                    bool known = _peerStatsPrev.TryGetValue(peer.Id, out var prev);
+                    _peerStatsPrev[peer.Id] = cur;
+                    if (!known)
+                        continue;
+
+                    _clientIdByPeerId.TryGetValue(peer.Id, out ulong clientId);
+                    DebugConsole.Log($"[NetStats] client {clientId}: " + LiteNetLibPeerStats.Describe(peer, prev, cur));
+                }
+
+                DebugConsole.Log(NetStats.BuildReportAndReset());
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.LogWarning("[NetStats] Could not report: " + ex.Message);
+            }
         }
     }
 }

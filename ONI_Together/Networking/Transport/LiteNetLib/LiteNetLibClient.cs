@@ -189,6 +189,7 @@ namespace ONI_Together.Networking.Transport.Lan
             writer.Put("ONI_TOGETHER");
             _connectedEventDelivered = false;
             _serverPeer = _client.Connect(ip, port, writer);
+            _hostStatsPrev = default; // a new peer starts its counters over
 
             int timeout = Configuration.Instance.Client.TimeoutSeconds;
             CoroutineRunner.RunOne(WaitForConnectionSuccess(timeout));
@@ -335,6 +336,8 @@ namespace ONI_Together.Networking.Transport.Lan
             _serverPeer = null;
             _connectedEventDelivered = false;
             _client = null;
+            _hostStatsPrev = default;
+            _lastNetStatsReport = 0f;
 
             while (_incomingPackets.TryDequeue(out var _)) { }
         }
@@ -453,6 +456,44 @@ namespace ONI_Together.Networking.Transport.Lan
             _lastPacketsIn = totalPacketsIn;
             _lastPacketsOut = totalPacketsOut;
             _lastBwPollTime = now;
+
+            if (_lastNetStatsReport <= 0f)
+                _lastNetStatsReport = now;
+            if (now - _lastNetStatsReport >= NetStats.ReportIntervalSeconds)
+            {
+                _lastNetStatsReport = now;
+                ReportNetStats(now);
+            }
+        }
+
+        private float _lastNetStatsReport;
+        private LiteNetLibPeerStats.Sample _hostStatsPrev;
+
+        /// <summary>
+        /// The client's view every 30 s: round trip to the host, loss in the window, and
+        /// how many of its own reliable packets still wait to leave. The first window
+        /// after a connection only takes the baseline. See LiteNetLibServer.ReportNetStats.
+        /// </summary>
+        private void ReportNetStats(float now)
+        {
+            try
+            {
+                var peer = _serverPeer;
+                if (peer != null)
+                {
+                    var cur = LiteNetLibPeerStats.Take(peer, now);
+                    var prev = _hostStatsPrev;
+                    _hostStatsPrev = cur;
+                    if (prev.At > 0f)
+                        DebugConsole.Log("[NetStats] host: " + LiteNetLibPeerStats.Describe(peer, prev, cur));
+                }
+
+                DebugConsole.Log(NetStats.BuildReportAndReset());
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.LogWarning("[NetStats] Could not report: " + ex.Message);
+            }
         }
     }
 }
