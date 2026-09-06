@@ -36,6 +36,16 @@ namespace ONI_Together.Networking
 			if (!go.TryGetComponent<Workable>(out var workable))
 				return 0;
 
+			// Pickupables move and are paired with the host's saved/announced identity.
+			// Stationary workables (including Diggable, which has no PrimaryElement)
+			// must not depend on registration order or mutable work/element state.
+			if (!go.TryGetComponent<Pickupable>(out var pickupable))
+			{
+				int stationaryId = StableHash("Workable|" + go.PrefabID().Name + "|" + workable.GetType().FullName);
+				stationaryId = unchecked((stationaryId * 16777619) ^ cell);
+				return stationaryId == 0 ? int.MinValue : stationaryId;
+			}
+
 			int hash = GetDeterministicEntityId(go,false,false) ^ workable.GetType().Name.GetHashCode() ^ ((int)workable.workTime).GetHashCode()
 				^ workable.multitoolHitEffectTag.GetHashCode() ^ workable.multitoolContext.GetHashCode();
 			int breakoff = 0;
@@ -48,6 +58,18 @@ namespace ONI_Together.Networking
 			return hash;
 		}
 
+
+		// Explicit string hashing: network identities must agree across processes.
+		private static int StableHash(string value)
+		{
+			unchecked
+			{
+				int hash = (int)2166136261;
+				foreach (char c in value)
+					hash = (hash ^ c) * 16777619;
+				return hash;
+			}
+		}
 
 		public static int GetDeterministicEntityId(GameObject go, bool useBreakOff = true, bool useCell = true)
 		{
