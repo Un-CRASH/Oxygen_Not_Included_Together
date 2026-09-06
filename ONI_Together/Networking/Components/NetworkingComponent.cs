@@ -69,6 +69,7 @@ namespace ONI_Together.Networking.Components
 			// Update leaves in this frame's batches (see TransportPacketSender). Components on
 			// this object whose LateUpdate runs after this one (the conduit and bulk flushes)
 			// wait one frame; that is 16-33 ms against the minutes this replaces.
+			PendingWorkableProgress.FlushReady();
 			NetworkConfig.TransportPacketSender.Flush();
 		}
 

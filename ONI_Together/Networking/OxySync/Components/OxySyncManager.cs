@@ -525,6 +525,7 @@ namespace ONI_Together.Networking.OxySync.Components
                     _fallbackWarned.Clear();
                     NetworkTransform.ResetHostClock();
                     ONI_Together.Networking.Synchronization.WorldGenSpawnMap.Clear();
+                    PendingWorkableProgress.Clear();
                     ONI_Together.Networking.Synchronization.GameClockSync.Reset();
 
             if (Instance == null) return;

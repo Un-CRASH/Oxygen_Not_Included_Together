@@ -87,6 +87,24 @@ namespace ONI_Together.Patches.World
 			}
 		}
 
+		// The identity can register before its target has spawned. Defer applying
+		// queued progress until LateUpdate, after the derived OnSpawn has returned.
+		[HarmonyPatch]
+		public class ProgressTarget_OnSpawn_Patch
+		{
+			private static IEnumerable<MethodBase> TargetMethods()
+			{
+				yield return AccessTools.Method(typeof(Workable), nameof(Workable.OnSpawn));
+				yield return AccessTools.Method(typeof(ComplexFabricator), nameof(ComplexFabricator.OnSpawn));
+			}
+
+			public static void Postfix(KMonoBehaviour __instance)
+			{
+				if (__instance.TryGetComponent<NetworkIdentity>(out var identity))
+					PendingWorkableProgress.IdentityReady(identity.NetId);
+			}
+		}
+
 		[HarmonyPatch(typeof(Workable), nameof(Workable.GetPercentComplete))]
 		public class Workable_GetPercentComplete_Patch
 		{

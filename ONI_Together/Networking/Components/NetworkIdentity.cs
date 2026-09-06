@@ -86,13 +86,14 @@ namespace ONI_Together.Networking.Components
 
 			// Any NetworkBehaviour that spawned before this ran was indexed under NetId 0.
 			OxySyncManager.RekeyBehaviours(gameObject, NetId);
+			PendingWorkableProgress.IdentityReady(NetId);
 			}
 
 		/// <summary>
 		/// This will be primarily used when the host spawns in an object and the client and host need to sync the netid
 		/// </summary>
 		/// <param name="netIdOverride"></param>
-		public void OverrideNetId(int netIdOverride)
+		public void OverrideNetId(int netIdOverride, bool preservePendingAtOldId = false)
 		{
 			using var _ = Profiler.Scope();
 
@@ -100,7 +101,10 @@ namespace ONI_Together.Networking.Components
 
 			// Unregister only our own entry; another object may have adopted the ID.
 			if (NetId != netIdOverride && NetworkIdentityRegistry.Unregister(NetId, this))
+			{
 				RemoteProgressRegistry.Clear(NetId, hideTarget: false);
+				if (!preservePendingAtOldId) PendingWorkableProgress.RemoveTarget(NetId);
+			}
 
 			// Override internal value
 			NetId = netIdOverride;
@@ -111,6 +115,7 @@ namespace ONI_Together.Networking.Components
 
 			// The sync manager filed our behaviours under the old NetId.
 			OxySyncManager.RekeyBehaviours(gameObject, netIdOverride);
+			PendingWorkableProgress.IdentityReady(netIdOverride);
 
 			//DebugConsole.Log($"[NetworkIdentity] Overridden NetId. New NetId = {NetId} for {gameObject.name}");
 		}
@@ -121,7 +126,10 @@ namespace ONI_Together.Networking.Components
 			using var _ = Profiler.Scope();
 
 			if (NetworkIdentityRegistry.Unregister(NetId, this))
+			{
 				RemoteProgressRegistry.Clear(NetId, hideTarget: false);
+				PendingWorkableProgress.RemoveTarget(NetId);
+			}
 			IsRegistered = false;
 			//DebugConsole.Log($"[NetworkIdentity] Unregistered NetId {NetId} for {gameObject.name}");
 			base.OnCleanUp();

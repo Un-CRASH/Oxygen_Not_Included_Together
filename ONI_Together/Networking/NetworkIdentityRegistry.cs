@@ -69,7 +69,7 @@ namespace ONI_Together.Networking
 				// A host mapping wins over a locally generated ID, but the displaced
 				// object stays alive and indexed until its own mapping arrives.
 				int replacement = Register(existing);
-				existing.OverrideNetId(replacement);
+				existing.OverrideNetId(replacement, preservePendingAtOldId: true);
 				DebugConsole.LogAggregated("Registry.OverrideCollision", $"[Registry] Host NetId {netId} adopted by {entity.name}; moved {existing.name} to {replacement}");
 			}
 			identities[netId] = entity;
@@ -159,6 +159,7 @@ namespace ONI_Together.Networking
 			identities.Clear();
 			_lookupFailCount = 0;
 			// TODO Rope into 1
+			PendingWorkableProgress.Clear();
 			GroundItemPickedUpPacket.ClearPending();
 			StorageItemPacket.ClearPending();
 		}

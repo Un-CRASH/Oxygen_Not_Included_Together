@@ -2,7 +2,6 @@ using HarmonyLib;
 using ONI_Together.DebugTools;
 using ONI_Together.Networking.Packets.Architecture;
 using Shared.Profiling;
-using System.Collections;
 using System.IO;
 using UnityEngine;
 
@@ -86,13 +85,11 @@ namespace ONI_Together.Networking.Packets.World
 			if (MultiplayerSession.IsHost)
 				return;
 
+			// A newer update (especially a hide) supersedes the pending state.
 			if (TryApply())
-				return;
-
-			if (Game.Instance != null)
-			{
-				Game.Instance.StartCoroutine(RetryApply(Clone()));
-			}
+				PendingWorkableProgress.Remove(TargetNetId, ProgressKind, TargetTypeName);
+			else
+				PendingWorkableProgress.Add(TargetNetId, ProgressKind, TargetTypeName, this);
 		}
 
 		private void PopulateFromWorkable(Workable workable, bool showProgressBar)
@@ -108,21 +105,7 @@ namespace ONI_Together.Networking.Packets.World
 			WorkTimeTotal = workable.GetWorkTime();
 		}
 
-		private WorkableProgressPacket Clone()
-		{
-			return new WorkableProgressPacket
-			{
-				TargetNetId = TargetNetId,
-				TargetTypeName = TargetTypeName,
-				ProgressKind = ProgressKind,
-				PercentComplete = PercentComplete,
-				ShowProgressBar = ShowProgressBar,
-				WorkTimeRemaining = WorkTimeRemaining,
-				WorkTimeTotal = WorkTimeTotal
-			};
-		}
-
-		private bool TryApply()
+		internal bool TryApply()
 		{
 			using var _ = Profiler.Scope();
 
@@ -143,7 +126,7 @@ namespace ONI_Together.Networking.Packets.World
 		{
 			using var _ = Profiler.Scope();
 
-			if (!NetworkIdentityRegistry.TryGet(TargetNetId, out var identity) || identity == null || identity.gameObject.IsNullOrDestroyed())
+			if (!NetworkIdentityRegistry.TryGet(TargetNetId, out var identity, logFailure: false) || identity == null || identity.gameObject.IsNullOrDestroyed())
 				return false;
 
 			Workable workable = null;
@@ -156,8 +139,9 @@ namespace ONI_Together.Networking.Packets.World
 				workable = identity.gameObject.GetComponent(workableType) as Workable;
 			}
 
-			workable ??= identity.gameObject.GetComponent<Workable>();
-			if (workable == null)
+			if (string.IsNullOrEmpty(TargetTypeName))
+				workable = identity.gameObject.GetComponent<Workable>();
+			if (workable == null || !workable.isSpawned)
 				return false;
 
 			if (WorkTimeTotal > 0f && !float.IsInfinity(WorkTimeTotal) && !float.IsNaN(WorkTimeTotal))
@@ -183,7 +167,9 @@ namespace ONI_Together.Networking.Packets.World
 		{
 			using var _ = Profiler.Scope();
 
-			if (!NetworkIdentityRegistry.TryGetComponent<ComplexFabricator>(TargetNetId, out var fabricator) || fabricator == null || fabricator.gameObject.IsNullOrDestroyed())
+			if (!NetworkIdentityRegistry.TryGet(TargetNetId, out var identity, logFailure: false) ||
+				!identity.TryGetComponent<ComplexFabricator>(out var fabricator) ||
+				fabricator == null || !fabricator.isSpawned || fabricator.gameObject.IsNullOrDestroyed())
 				return false;
 
 			fabricator.OrderProgress = Mathf.Clamp01(PercentComplete);
@@ -210,29 +196,5 @@ namespace ONI_Together.Networking.Packets.World
 			return workable != null && workable.TryGetComponent<Pickupable>(out var pickupable) && pickupable.storage != null;
 		}
 
-		private static string ShortTypeName(string assemblyQualifiedName)
-		{
-			if (string.IsNullOrEmpty(assemblyQualifiedName))
-				return "?";
-			int comma = assemblyQualifiedName.IndexOf(',');
-			return comma > 0 ? assemblyQualifiedName.Substring(0, comma) : assemblyQualifiedName;
-		}
-
-		private static IEnumerator RetryApply(WorkableProgressPacket packet)
-		{
-			for (int attempt = 0; attempt < 12; attempt++)
-			{
-				yield return null;
-
-				if (!MultiplayerSession.InActiveSession || MultiplayerSession.IsHost)
-					yield break;
-
-				if (packet.TryApply())
-					yield break;
-			}
-
-			string typeName = ShortTypeName(packet.TargetTypeName);
-			DebugConsole.LogAggregated("WorkableProgress.Unresolved." + typeName, $"[WorkableProgressPacket] Failed to resolve target {packet.TargetNetId} ({typeName})");
-		}
 	}
 }
