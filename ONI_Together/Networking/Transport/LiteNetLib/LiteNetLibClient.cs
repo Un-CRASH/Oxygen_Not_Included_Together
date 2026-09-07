@@ -52,7 +52,7 @@ namespace ONI_Together.Networking.Transport.Lan
         public static int MaxServerCapacity { get; internal set; } = 16;
         public bool IsLoadingReconnect { get; set; }
 
-        private static readonly ConcurrentQueue<byte[]> _incomingPackets = new ConcurrentQueue<byte[]>();
+        private static readonly ConcurrentQueue<(NetPeer peer, byte[] data)> _incomingPackets = new ConcurrentQueue<(NetPeer, byte[])>();
 
         // Network health
         private const int JITTER_SAMPLE_COUNT = 20;
@@ -266,6 +266,7 @@ namespace ONI_Together.Networking.Transport.Lan
         {
             using var _ = Profiler.Scope();
 
+            PacketHandler.ForgetSource(peer);
             _serverPeer = null;
 
             OnClientDisconnected?.Invoke();
@@ -319,7 +320,7 @@ namespace ONI_Together.Networking.Transport.Lan
         private void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
         {
             byte[] rawData = reader.GetRemainingBytes();
-            _incomingPackets.Enqueue(rawData);
+            _incomingPackets.Enqueue((peer, rawData));
         }
 
         private void OnNetworkError(IPEndPoint endPoint, SocketError socketError)
@@ -331,6 +332,7 @@ namespace ONI_Together.Networking.Transport.Lan
         {
             using var _ = Profiler.Scope();
 
+            PacketHandler.ForgetSource(_serverPeer);
             _serverPeer?.Disconnect();
             _client?.Stop();
             _serverPeer = null;
@@ -368,11 +370,12 @@ namespace ONI_Together.Networking.Transport.Lan
         {
             using var _ = Profiler.Scope();
 
-            while (_incomingPackets.TryDequeue(out var data))
+            while (_incomingPackets.TryDequeue(out var packet))
             {
+                if (!ReferenceEquals(packet.peer, _serverPeer)) continue;
                 try
                 {
-                    PacketHandler.HandleIncoming(data);
+                    PacketHandler.HandleIncoming(packet.data, packet.peer);
                 }
                 catch (Exception ex)
                 {

@@ -162,6 +162,7 @@ namespace ONI_Together.Networking.Transport.Lan
         {
             using var _ = Profiler.Scope();
 
+            PacketHandler.ForgetSource(e.Client);
             ulong clientId = e.Client.Id;
 
             RemoveClientFromList(clientId);
@@ -201,7 +202,7 @@ namespace ONI_Together.Networking.Transport.Lan
 
             try
             {
-                PacketHandler.HandleIncoming(rawData);
+                PacketHandler.HandleIncoming(rawData, e.FromConnection);
             }
             catch (Exception ex)
             {

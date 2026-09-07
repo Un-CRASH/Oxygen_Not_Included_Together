@@ -70,6 +70,7 @@ namespace ONI_Together.Networking.Transport.Steam
 
             if (Connection.HasValue)
             {
+                PacketHandler.ForgetSource(Connection.Value);
                 DebugConsole.Log("[GameClient] Disconnecting from host...");
 
                 bool result = SteamNetworkingSockets.CloseConnection(
@@ -159,7 +160,7 @@ namespace ONI_Together.Networking.Transport.Steam
                 try
                 {
                     //DebugConsole.Log($"[GameClient] Processing packet {i+1}/{msgCount}, size: {msg.m_cbSize} bytes, readyToProcess: {PacketHandler.readyToProcess}");
-                    PacketHandler.HandleIncoming(data);
+                    PacketHandler.HandleIncoming(data, conn);
                 }
                 catch (Exception ex)
                 {
@@ -190,6 +191,7 @@ namespace ONI_Together.Networking.Transport.Steam
                     break;
                 case ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_ClosedByPeer:
                 case ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
+                    PacketHandler.ForgetSource(data.m_hConn);
                     OnDisconnected("Closed by peer or problem detected locally", remote, state);
                     break;
                 default:

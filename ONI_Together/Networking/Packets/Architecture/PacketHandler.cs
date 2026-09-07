@@ -20,6 +20,22 @@ namespace ONI_Together.Networking.Packets.Architecture
 	{
 		private static bool _readyToProcess = true;
 
+		// Transport metadata, never a player id claimed by an incoming packet. Nested
+		// Bulk/Coalesced/Chunked dispatches inherit it. Restore it even after a failure.
+		[ThreadStatic] private static object _incomingSource;
+		internal static object IncomingSource => _incomingSource;
+
+		public static void HandleIncoming(byte[] data, object source)
+		{
+			if (source == null) throw new ArgumentNullException(nameof(source));
+			object previous = _incomingSource;
+			_incomingSource = source;
+			try { HandleIncoming(data); }
+			finally { _incomingSource = previous; }
+		}
+
+		internal static void ForgetSource(object source) => ChunkedPacket.ForgetSource(source);
+
 		/// <summary>
 		/// The packets a client may act on while it has no world - in the frontend, waiting
 		/// for or downloading the host's save.

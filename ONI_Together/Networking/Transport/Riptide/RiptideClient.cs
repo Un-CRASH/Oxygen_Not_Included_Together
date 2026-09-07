@@ -30,7 +30,7 @@ namespace ONI_Together.Networking.Transport.Lan
             get { return _client; }
         }
 
-        private static readonly ConcurrentQueue<byte[]> _incomingPackets = new ConcurrentQueue<byte[]>();
+        private static readonly ConcurrentQueue<(Connection source, byte[] data)> _incomingPackets = new ConcurrentQueue<(Connection, byte[])>();
 
         // Network health
         private const int JITTER_SAMPLE_COUNT = 20;
@@ -103,7 +103,7 @@ namespace ONI_Together.Networking.Transport.Lan
             using var _ = Profiler.Scope();
 
             byte[] rawData = e.Message.GetBytes();
-            _incomingPackets.Enqueue(rawData);
+            _incomingPackets.Enqueue((e.FromConnection, rawData));
         }
 
         private void OnConnectedToServer(object sender, EventArgs e)
@@ -173,6 +173,7 @@ namespace ONI_Together.Networking.Transport.Lan
             if (_client.IsNotConnected)
                 return;
 
+            PacketHandler.ForgetSource(_client.Connection);
             _client.Disconnect();
         }
 
@@ -180,8 +181,10 @@ namespace ONI_Together.Networking.Transport.Lan
         {
             using var _ = Profiler.Scope();
 
-            while (_incomingPackets.TryDequeue(out var rawData))
+            while (_incomingPackets.TryDequeue(out var packet))
             {
+                if (!ReferenceEquals(packet.source, _client?.Connection)) continue;
+                byte[] rawData = packet.data;
                 int size = rawData.Length;
 
                 int packetType = rawData.Length >= 4
@@ -192,7 +195,7 @@ namespace ONI_Together.Networking.Transport.Lan
 
                 try
                 {
-                    PacketHandler.HandleIncoming(rawData);
+                    PacketHandler.HandleIncoming(rawData, packet.source);
                 }
                 catch (Exception ex)
                 {

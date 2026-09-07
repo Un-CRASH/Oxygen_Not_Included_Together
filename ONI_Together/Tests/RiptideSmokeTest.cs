@@ -122,7 +122,7 @@ namespace ONI_Together.Tests
             try
             {
                 // Pass the full payload (including packetType) to your handler
-                PacketHandler.HandleIncoming(rawData);
+                PacketHandler.HandleIncoming(rawData, e.FromConnection);
             }
             catch (Exception ex)
             {

@@ -176,7 +176,7 @@ namespace ONI_Together.Networking.Transport.Steam
 
                 try
                 {
-                    PacketHandler.HandleIncoming(bytes);
+                    PacketHandler.HandleIncoming(bytes, msg.m_conn);
                 }
                 catch (Exception ex)
                 {
@@ -287,6 +287,7 @@ namespace ONI_Together.Networking.Transport.Steam
         {
             using var _ = Profiler.Scope();
 
+            PacketHandler.ForgetSource(conn);
             SteamNetworkingSockets.CloseConnection(conn, 0, null, false);
 
             if (MultiplayerSession.ConnectedPlayers.TryGetValue(clientId.m_SteamID, out var playerToRemove))

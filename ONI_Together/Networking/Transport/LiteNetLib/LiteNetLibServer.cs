@@ -27,7 +27,7 @@ namespace ONI_Together.Networking.Transport.Lan
         private TcpFileTransferServer _tcpTransfer;
         private readonly Dictionary<ulong, NetPeer> _peersByClientId = new Dictionary<ulong, NetPeer>();
         private readonly Dictionary<int, ulong> _clientIdByPeerId = new Dictionary<int, ulong>();
-        private readonly ConcurrentQueue<(ulong clientId, byte[] data)> _incomingPackets = new ConcurrentQueue<(ulong, byte[])>();
+        private readonly ConcurrentQueue<(ulong clientId, NetPeer peer, byte[] data)> _incomingPackets = new ConcurrentQueue<(ulong, NetPeer, byte[])>();
 
         public static NetManager ServerInstance => _server;
         public static ulong CLIENT_ID { get; private set; } = 1;
@@ -222,6 +222,7 @@ namespace ONI_Together.Networking.Transport.Lan
         {
             using var _ = Profiler.Scope();
 
+            PacketHandler.ForgetSource(peer);
             _peerStatsPrev.Remove(peer.Id);
             if (_clientIdByPeerId.TryGetValue(peer.Id, out ulong clientId))
             {
@@ -247,7 +248,7 @@ namespace ONI_Together.Networking.Transport.Lan
             if (_clientIdByPeerId.TryGetValue(peer.Id, out ulong clientId))
             {
                 byte[] rawData = reader.GetRemainingBytes();
-                _incomingPackets.Enqueue((clientId, rawData));
+                _incomingPackets.Enqueue((clientId, peer, rawData));
             }
         }
 
@@ -263,6 +264,7 @@ namespace ONI_Together.Networking.Transport.Lan
             if (_server == null)
                 return;
 
+            foreach (var peer in _peersByClientId.Values) PacketHandler.ForgetSource(peer);
             _server.Stop();
             _server = null;
             _listener = null;
@@ -292,6 +294,7 @@ namespace ONI_Together.Networking.Transport.Lan
             if (_server == null)
                 return;
 
+            foreach (var peer in _peersByClientId.Values) PacketHandler.ForgetSource(peer);
             _server.DisconnectAll();
             _peersByClientId.Clear();
             _clientIdByPeerId.Clear();
@@ -318,9 +321,11 @@ namespace ONI_Together.Networking.Transport.Lan
 
             while (_incomingPackets.TryDequeue(out var packet))
             {
+                if (!_peersByClientId.TryGetValue(packet.clientId, out var currentPeer) || !ReferenceEquals(currentPeer, packet.peer))
+                    continue;
                 try
                 {
-                    PacketHandler.HandleIncoming(packet.data);
+                    PacketHandler.HandleIncoming(packet.data, packet.peer);
                 }
                 catch (Exception ex)
                 {
@@ -335,6 +340,7 @@ namespace ONI_Together.Networking.Transport.Lan
 
             if (_peersByClientId.TryGetValue(clientId, out var peer))
             {
+                PacketHandler.ForgetSource(peer);
                 peer.Disconnect();
                 _peersByClientId.Remove(clientId);
                 _clientIdByPeerId.Remove(peer.Id);
