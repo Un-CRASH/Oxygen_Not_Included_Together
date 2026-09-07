@@ -26,8 +26,13 @@ namespace ONI_Together.Patches.GamePatches
                     return;
                 }
 
-                if (!go.TryGetNetIdentity(out var identity))
+                // Selection helpers (WorldSelectionCollider for natural cells) are
+                // not network entities. Inspecting the UI must never create an ID.
+                if (!go.TryGetExistingNetIdentity(out var identity) || identity.NetId == 0)
+                {
+                    UnsubscribeCurrent();
                     return;
+                }
 
                 if (identity.NetId == _subscribedNetId)
                     return;
