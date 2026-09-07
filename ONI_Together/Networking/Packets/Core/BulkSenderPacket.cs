@@ -32,7 +32,7 @@ namespace ONI_Together.Networking.Packets.Core
 			using var _ = Profiler.Scope();
 
 			writer.Write(InnerPacketId);
-			int packetCount = SerializedInnerPackets.Count();
+			int packetCount = SerializedInnerPackets.Count;
 			writer.Write(packetCount);
 			for (int i = 0; i < packetCount; i++)
 			{
@@ -49,11 +49,16 @@ namespace ONI_Together.Networking.Packets.Core
 
 			InnerPacketId = reader.ReadInt32();
 			int packetCount = reader.ReadInt32();
+			// Every entry needs at least its length field. Validate before allocating.
+			if (packetCount < 0 || packetCount > (reader.BaseStream.Length - reader.BaseStream.Position) / sizeof(int))
+				throw new InvalidDataException("Invalid bulk packet count: " + packetCount);
 			SerializedInnerPackets = new List<byte[]>(packetCount);
 			for (int i = 0; i < packetCount; i++)
 			{
-				int packetDataLengt = reader.ReadInt32();
-				var packetData = reader.ReadBytes(packetDataLengt);
+				int length = reader.ReadInt32();
+				if (length < 0 || length > reader.BaseStream.Length - reader.BaseStream.Position)
+					throw new InvalidDataException("Invalid bulk entry length: " + length);
+				var packetData = reader.ReadBytes(length);
 				SerializedInnerPackets.Add(packetData);
 			}
 		}
@@ -70,16 +75,22 @@ namespace ONI_Together.Networking.Packets.Core
 
 			foreach (var packetData in SerializedInnerPackets)
 			{
-				var innerPacket = PacketRegistry.Create(InnerPacketId);
-				var ms = new MemoryStream(packetData);
-				var reader = new BinaryReader(ms);
-				innerPacket.Deserialize(reader);
-				// Inner packets bypass PacketHandler.HandleIncoming, so the no-world gate
-				// has to be applied here as well - see PacketHandler.AllowedWithoutWorld.
-				if (PacketHandler.ShouldDispatchWithoutWorld(innerPacket))
-					innerPacket.OnDispatched();
-				reader.Dispose();
-				ms.Dispose();
+				try
+				{
+					var innerPacket = PacketRegistry.Create(InnerPacketId);
+					using var ms = new MemoryStream(packetData);
+					using var reader = new BinaryReader(ms);
+					innerPacket.Deserialize(reader);
+					// Bulk entries still need the no-world gate applied individually.
+					if (PacketHandler.ShouldDispatchWithoutWorld(innerPacket))
+						innerPacket.OnDispatched();
+				}
+				catch (Exception ex)
+				{
+					// Entries are framed independently: one failure must not drop the rest.
+					DebugConsole.LogAggregated("BulkSenderPacket.Inner." + InnerPacketId,
+						$"[BulkSenderPacket] Failed inner packet {InnerPacketId}: {ex}");
+				}
 			}
 		}
 	}
