@@ -192,7 +192,11 @@ namespace ONI_Together.Misc
 			netId = 0;
 			if (!IsHostEntity(behavior))
 				return false;
-			netId = behavior.GetNetId();
+			// Shared animation components also belong to UI portraits. A predicate
+			// must not attach/register an identity on those local objects.
+			var identity = behavior.GetExistingNetIdentity();
+			if (identity == null) return false;
+			netId = identity.NetId;
 			return netId != 0;
 		}
 		public static bool IsHostEntity(MonoBehaviour behavior)
