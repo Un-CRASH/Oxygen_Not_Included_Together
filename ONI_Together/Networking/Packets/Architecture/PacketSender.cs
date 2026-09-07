@@ -118,16 +118,13 @@ namespace ONI_Together.Networking
 			WaitingBulkPacketBytes.TryGetValue(conn, out var byteTotals);
 			if (byteTotals != null && byteTotals.TryGetValue(packetId, out var bt))
 				flushBytes = bt;
+			// Hand the detached list to the packet. The transport queue may serialize it
+			// later, so clearing or reusing it here would send an empty/changed batch.
+			allPendingPackets.Remove(packetId);
+			byteTotals?.Remove(packetId);
 			var swFlush = System.Diagnostics.Stopwatch.StartNew();
 			SendToConnection(conn, new BulkSenderPacket(packetId, pendingPackets), PacketSendMode.ReliableImmediate);
 			swFlush.Stop();
-			pendingPackets.Clear();
-			allPendingPackets.Remove(packetId);
-			if (byteTotals != null)
-			{
-				byteTotals[packetId] = 0;
-				byteTotals.Remove(packetId);
-			}
 			if (UpdateRunners.TryGetValue(packetId, out var runner))
 				runner.RecordDispatch(conn);
 			if (DragToolBulkPacketIds.Contains(packetId))
