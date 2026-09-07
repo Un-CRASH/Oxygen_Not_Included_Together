@@ -74,6 +74,11 @@ namespace ONI_Together.Networking.Transport.Lan
         /// </summary>
         protected override bool SupportsCoalescing => true;
 
+        public override bool CanSendSnapshot(object connection) =>
+            base.CanSendSnapshot(connection) && connection is NetPeer peer
+            && peer.ConnectionState == ConnectionState.Connected
+            && peer.GetPacketsCountInReliableQueue(DefaultChannel, true) < 32;
+
         private static bool IsPriority(PacketSendMode sendType, IPacket packet)
         {
             return (sendType & PacketSendMode.Priority) != 0 || packet is IPriorityPacket;

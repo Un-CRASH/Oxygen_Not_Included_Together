@@ -43,6 +43,11 @@ namespace ONI_Together.Networking.Transport
         /// <summary>True for a transport whose reliable channel counts packets, not bytes.</summary>
         protected virtual bool SupportsCoalescing => false;
 
+        // Full viewport snapshots wait behind an existing local queue. Ordinary
+        // changes and world events keep their existing send order.
+        public virtual bool CanSendSnapshot(object connection) =>
+            !_pendingQueues.TryGetValue(connection, out var queue) || queue.Count == 0;
+
         public bool SendToConnection(object conn, IPacket packet, PacketSendMode sendType = PacketSendMode.ReliableImmediate)
         {
             // Never put latency-sensitive snapshots behind reliable state traffic.

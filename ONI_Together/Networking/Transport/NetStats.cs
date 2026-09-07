@@ -23,6 +23,16 @@ namespace ONI_Together.Networking.Transport
         }
 
         private static readonly Dictionary<string, Counter> _outByType = new Dictionary<string, Counter>();
+        private static readonly Dictionary<string, Counter> _syncFields = new();
+
+        public static void RecordSyncFields(string behaviour, int fields, bool snapshot)
+        {
+            string key = (snapshot ? "snapshot/" : "delta/") + behaviour;
+            if (!_syncFields.TryGetValue(key, out var counter))
+                _syncFields[key] = counter = new Counter();
+            counter.Count += fields;
+        }
+
         private static int _outPackets;
         private static int _batches;
         private static int _batchedPackets;
@@ -60,6 +70,7 @@ namespace ONI_Together.Networking.Transport
         /// <summary>Forget the window; the session is over.</summary>
         public static void Reset()
         {
+            _syncFields.Clear();
             _outByType.Clear();
             _outPackets = 0;
             _batches = 0;
@@ -109,6 +120,16 @@ namespace ONI_Together.Networking.Transport
             _batchedPackets = 0;
             _batchedBytes = 0;
             _direct = 0;
+            var syncList = new List<KeyValuePair<string, Counter>>(_syncFields);
+            syncList.Sort((a, b) => b.Value.Count.CompareTo(a.Value.Count));
+            sb.Append("; SyncVar fields: ");
+            for (int i = 0; i < syncList.Count && i < 6; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                sb.Append(syncList[i].Key).Append(' ').Append(syncList[i].Value.Count);
+            }
+            if (syncList.Count == 0) sb.Append("none");
+            _syncFields.Clear();
             _windowStart = now;
             return sb.ToString();
         }

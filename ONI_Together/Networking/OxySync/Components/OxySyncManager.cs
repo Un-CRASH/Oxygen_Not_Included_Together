@@ -27,6 +27,18 @@ namespace ONI_Together.Networking.OxySync.Components
         private readonly Dictionary<(int, int), NetworkBehaviour> _behaviourLookup = new();
         private readonly Dictionary<(int NetId, int TypeHash), int> _typeOrdinals = new();
 
+        private sealed class PendingSnapshot
+        {
+            public object Connection;
+            public Queue<NetworkBehaviour> Behaviours;
+        }
+
+        private readonly Dictionary<(ulong Player, int Group), PendingSnapshot> _pendingSnapshots = new();
+        private readonly List<(ulong Player, int Group)> _snapshotKeys = new();
+        private readonly Dictionary<ulong, int> _snapshotBudgets = new();
+        private float _nextSnapshotTick;
+        private const int SnapshotBudgetPerPlayer = 16;
+
         private float _tickAccumulator;
 
         public int RegisteredCount => _behaviours.Count;
@@ -193,6 +205,7 @@ namespace ONI_Together.Networking.OxySync.Components
         private void Update()
         {
             if (!MultiplayerSession.IsHost) return;
+            PumpPendingSnapshots();
             if (_behaviours.Count == 0) return;
 
             _tickAccumulator += Time.unscaledDeltaTime;
@@ -240,6 +253,7 @@ namespace ONI_Together.Networking.OxySync.Components
                     var sendMode = kvp.Key.Mode;
                     var updates = kvp.Value;
                     totalChanges += updates.Count;
+                    ONI_Together.Networking.Transport.NetStats.RecordSyncFields(behaviour.GetType().Name, updates.Count, snapshot: false);
 
                     if (updates.Count == 1)
                     {
@@ -396,16 +410,60 @@ namespace ONI_Together.Networking.OxySync.Components
             if (!Instance._behavioursByGroup.TryGetValue(groupId, out var behavioursInGroup))
                 return;
 
-            foreach (var behaviour in behavioursInGroup)
+            var key = (playerId, groupId);
+            if (Instance._pendingSnapshots.TryGetValue(key, out var pending)
+                && ONI_Together.Networking.Transport.ConnectionIdentityComparer.Instance.Equals(pending.Connection, player.Connection))
+                return;
+
+            Instance._pendingSnapshots[key] = new PendingSnapshot
             {
-                if (behaviour.IsNullOrDestroyed()) continue;
+                Connection = player.Connection,
+                Behaviours = new Queue<NetworkBehaviour>(behavioursInGroup)
+            };
+        }
+
+        private void PumpPendingSnapshots()
+        {
+            if (_pendingSnapshots.Count == 0 || Time.unscaledTime < _nextSnapshotTick) return;
+            _nextSnapshotTick = Time.unscaledTime + 0.1f;
+            _snapshotBudgets.Clear();
+            _snapshotKeys.Clear();
+            _snapshotKeys.AddRange(_pendingSnapshots.Keys);
+            foreach (var key in _snapshotKeys)
+            {
+                var pending = _pendingSnapshots[key];
+                if (!MultiplayerSession.ConnectedPlayers.TryGetValue(key.Player, out var player)
+                    || player.Connection == null
+                    || !ONI_Together.Networking.Transport.ConnectionIdentityComparer.Instance.Equals(pending.Connection, player.Connection)
+                    || !InterestGroupManager.IsPlayerInGroup(key.Player, key.Group))
+                {
+                    _pendingSnapshots.Remove(key);
+                    continue;
+                }
+
+                _snapshotBudgets.TryGetValue(key.Player, out int used);
+                while (pending.Behaviours.Count > 0 && used < SnapshotBudgetPerPlayer
+                    && NetworkConfig.TransportPacketSender.CanSendSnapshot(player.Connection))
+                {
+                    var behaviour = pending.Behaviours.Dequeue();
+                    used++;
+                    if (!behaviour.IsNullOrDestroyed())
+                        SendBehaviourSnapshot(key.Player, key.Group, behaviour);
+                }
+                _snapshotBudgets[key.Player] = used;
+                if (pending.Behaviours.Count == 0) _pendingSnapshots.Remove(key);
+            }
+        }
+
+        private static void SendBehaviourSnapshot(ulong playerId, int groupId, NetworkBehaviour behaviour)
+        {
 
                 int netId = behaviour.NetId;
-                if (netId == 0) continue;
+                if (netId == 0) return;
                 int behaviourId = behaviour.BehaviourId;
 
                 var fields = behaviour.SyncVarFields;
-                if (fields.Count == 0) continue;
+                if (fields.Count == 0) return;
 
                 var updates = new List<(int Hash, Variant Value)>();
                 for (int i = 0; i < fields.Count; i++)
@@ -418,8 +476,9 @@ namespace ONI_Together.Networking.OxySync.Components
                     updates.Add((field.Hash, VariantHelper.ObjectToVariant(field.Info.GetValue(behaviour))));
                 }
 
-                if (updates.Count == 0) continue;
+                if (updates.Count == 0) return;
 
+                ONI_Together.Networking.Transport.NetStats.RecordSyncFields(behaviour.GetType().Name, updates.Count, snapshot: true);
                 long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
                 if (updates.Count == 1)
@@ -441,7 +500,6 @@ namespace ONI_Together.Networking.OxySync.Components
                         Timestamp = timestamp,
                     }, PacketSendMode.ReliableImmediate);
                 }
-            }
         }
 
         /// <summary>
@@ -533,6 +591,10 @@ namespace ONI_Together.Networking.OxySync.Components
             Instance._behaviourLookup.Clear();
             Instance._behavioursByGroup.Clear();
             Instance._changedByGroup.Clear();
+            Instance._pendingSnapshots.Clear();
+            Instance._snapshotKeys.Clear();
+            Instance._snapshotBudgets.Clear();
+            Instance._nextSnapshotTick = 0f;
             Instance._typeOrdinals.Clear();
         }
 
