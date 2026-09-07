@@ -144,8 +144,15 @@ namespace ONI_Together.Networking
 			// frame filled is handed to the transport before the peer closes. Best effort:
 			// LiteNetLib sends from its own thread, so what Stop cuts off is lost, as it
 			// was before batching.
-			NetworkConfig.TransportPacketSender.Flush();
-			NetworkConfig.TransportClient.Disconnect();
+			try
+			{
+				NetworkConfig.TransportPacketSender.Flush();
+			}
+			finally
+			{
+				try { NetworkConfig.TransportClient.Disconnect(); }
+				finally { NetworkConfig.TransportPacketSender.Discard(); }
+			}
 		}
 
 		public static void ReconnectToSession()

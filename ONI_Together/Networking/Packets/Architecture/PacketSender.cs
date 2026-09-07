@@ -76,10 +76,20 @@ namespace ONI_Together.Networking
 		// Packet ids that belong to DragToolPacket subclasses — tagged lazily on first append
 		// so the bulk flush site can record SyncStats.DragTool without needing the typed instance.
 		static HashSet<int> DragToolBulkPacketIds = new HashSet<int>();
+		/// <summary>Drops bulk payloads and connection-specific throttles from the old session.</summary>
+		internal static void ClearPending()
+		{
+			WaitingBulkPacketsPerReceiver.Clear();
+			WaitingBulkPacketBytes.Clear();
+			UpdateRunners.Clear();
+			DragToolBulkPacketIds.Clear();
+		}
+
 		public static void DispatchPendingBulkPackets()
 		{
 			using var _ = Profiler.Scope();
 
+			if (WaitingBulkPacketsPerReceiver.Count == 0) return;
 			var emptyConnections = new List<object>();
 			foreach (var kvp in WaitingBulkPacketsPerReceiver)
 			{

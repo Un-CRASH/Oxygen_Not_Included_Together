@@ -94,6 +94,7 @@ namespace ONI_Together.Networking
 			using var _ = Profiler.Scope();
 
 			GameServerHardSync.Reset();
+			PacketSender.ClearPending();
 			Packets.Core.ChunkedPacket.ClearPending();
 			ConnectedPlayers.Clear();
 			KnownPlayerNames.Clear();

@@ -195,6 +195,9 @@ namespace ONI_Together.Networking.Transport
         {
             _pendingQueues.Clear();
             _batches.Clear();
+            _emptyConnections.Clear();
+            _flushedBatches.Clear();
+            PacketSender.ClearPending();
             NetStats.Reset();
         }
 
