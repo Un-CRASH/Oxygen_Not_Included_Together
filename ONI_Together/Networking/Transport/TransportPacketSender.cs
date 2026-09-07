@@ -54,7 +54,10 @@ namespace ONI_Together.Networking.Transport
                 || packet is ILatencySensitivePacket
                 || (sendType & PacketSendMode.Priority) != 0 || packet is IPriorityPacket;
 
-            if (!bypass && ShouldCoalesce(packet, sendType))
+            // Live option changes must not strand an existing queue or let newer
+            // ordinary packets overtake it. Control/snapshot bypasses stay immediate.
+            bool drainingQueue = _pendingQueues.TryGetValue(conn, out var pendingQueue) && pendingQueue.Count > 0;
+            if (!bypass && !drainingQueue && ShouldCoalesce(packet, sendType))
             {
                 Coalesce(conn, packet, sendType);
                 return true;
@@ -70,7 +73,7 @@ namespace ONI_Together.Networking.Transport
             if ((sendType & PacketSendMode.Reliable) != 0)
                 NetStats.RecordDirect();
 
-            if (bypass || !Configuration.Instance.EnablePacketQueue)
+            if (bypass || (!Configuration.Instance.EnablePacketQueue && !drainingQueue))
                 return SendPacket(conn, packet, sendType);
 
             // queue it
@@ -181,7 +184,7 @@ namespace ONI_Together.Networking.Transport
         /// </summary>
         public void Flush()
         {
-            if (Configuration.Instance.EnablePacketQueue)
+            if (_pendingQueues.Count > 0)
                 FlushQueues();
 
             FlushBatches();
