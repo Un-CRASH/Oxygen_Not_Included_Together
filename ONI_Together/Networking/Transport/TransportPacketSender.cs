@@ -9,7 +9,7 @@ namespace ONI_Together.Networking.Transport
 {
     public abstract class TransportPacketSender
     {
-        private readonly Dictionary<object, Queue<(IPacket packet, PacketSendMode sendMode)>> _pendingQueues = new Dictionary<object, Queue<(IPacket packet, PacketSendMode sendMode)>>();
+        private readonly Dictionary<object, Queue<(IPacket packet, PacketSendMode sendMode)>> _pendingQueues = new Dictionary<object, Queue<(IPacket packet, PacketSendMode sendMode)>>(ConnectionIdentityComparer.Instance);
         private readonly List<object> _emptyConnections = new List<object>();
 
         /// <summary>
@@ -37,7 +37,7 @@ namespace ONI_Together.Networking.Transport
         }
 
         private const int BatchHeaderBytes = 8; // packet id + entry count
-        private readonly Dictionary<object, Batch> _batches = new Dictionary<object, Batch>();
+        private readonly Dictionary<object, Batch> _batches = new Dictionary<object, Batch>(ConnectionIdentityComparer.Instance);
         private readonly List<object> _flushedBatches = new List<object>();
 
         /// <summary>True for a transport whose reliable channel counts packets, not bytes.</summary>

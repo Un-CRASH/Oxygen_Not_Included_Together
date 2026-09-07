@@ -25,7 +25,7 @@ namespace ONI_Together.Networking
 		private class PacketUpdateRunner
 		{
 			private readonly float _updateIntervalS;
-			private readonly Dictionary<object, float> _lastDispatchTime = [];
+			private readonly Dictionary<object, float> _lastDispatchTime = new(ConnectionIdentityComparer.Instance);
 
 			public PacketUpdateRunner(int packetId, uint updateInterval)
 			{
@@ -70,9 +70,9 @@ namespace ONI_Together.Networking
 		}
 
 		static Dictionary<int, PacketUpdateRunner> UpdateRunners = [];
-		static Dictionary<object, Dictionary<int, List<byte[]>>> WaitingBulkPacketsPerReceiver = [];
+		static Dictionary<object, Dictionary<int, List<byte[]>>> WaitingBulkPacketsPerReceiver = new(ConnectionIdentityComparer.Instance);
 		// Running byte total per (receiver, packetId) so LAN capacity checks stay O(1) per append.
-		static Dictionary<object, Dictionary<int, int>> WaitingBulkPacketBytes = [];
+		static Dictionary<object, Dictionary<int, int>> WaitingBulkPacketBytes = new(ConnectionIdentityComparer.Instance);
 		// Packet ids that belong to DragToolPacket subclasses — tagged lazily on first append
 		// so the bulk flush site can record SyncStats.DragTool without needing the typed instance.
 		static HashSet<int> DragToolBulkPacketIds = new HashSet<int>();

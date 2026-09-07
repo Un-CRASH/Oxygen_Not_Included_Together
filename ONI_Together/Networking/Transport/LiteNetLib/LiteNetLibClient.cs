@@ -332,6 +332,12 @@ namespace ONI_Together.Networking.Transport.Lan
         {
             using var _ = Profiler.Scope();
 
+            // Save loading keeps the session metadata, but must not keep a send
+            // target alive. Spawn callbacks can send before the reconnect completes.
+            if (MultiplayerSession.ConnectedPlayers.TryGetValue(MultiplayerSession.HostUserID, out var host)
+                && ReferenceEquals(host.Connection, _serverPeer))
+                host.Connection = null;
+
             PacketHandler.ForgetSource(_serverPeer);
             _serverPeer?.Disconnect();
             _client?.Stop();
