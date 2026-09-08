@@ -251,6 +251,15 @@ namespace ONI_Together.Networking.OxySync.Components
         private static readonly HashSet<Type> ClientSkippedCompleteWork = new HashSet<Type>
         {
             typeof(Pickupable),
+            // Construction completion belongs to BuildCompletePacket. The client's ghost
+            // has an empty storage (its duplicants deliver nothing), so the game aborted
+            // every replicated completion with "about to generate a nan Item Count" -
+            // ~1450 warnings in one session that looked like broken builds.
+            typeof(Constructable),
+            // Deconstruction belongs to DeconstructCompletePacket. Run here, the vanilla
+            // path dropped the materials a second time with client-local ids on top of
+            // the host's drops, and the packet that followed found the building gone.
+            typeof(Deconstructable),
         };
 
         [ClientRpc]

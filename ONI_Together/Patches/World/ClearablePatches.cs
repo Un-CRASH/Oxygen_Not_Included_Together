@@ -1,6 +1,7 @@
 using HarmonyLib;
 using ONI_Together.DebugTools;
 using ONI_Together.Networking;
+using ONI_Together.Networking.Packets.Tools;
 using ONI_Together.Networking.Packets.Tools.Clear;
 using Shared.Profiling;
 using UnityEngine;
@@ -21,6 +22,8 @@ namespace ONI_Together.Patches.World
 		/// </summary>
 		internal static int SuppressItemPackets;
 
+		internal static void ResetState() => SuppressItemPackets = 0;
+
 		[HarmonyPatch(typeof(Clearable), "OnAbsorb")]
 		public static class ClearableOnAbsorbPatch
 		{
@@ -31,23 +34,35 @@ namespace ONI_Together.Patches.World
 
 			public static void Finalizer()
 			{
-				SuppressItemPackets--;
+				if (SuppressItemPackets > 0) SuppressItemPackets--;
 			}
 		}
 
+		/// <summary>
+		/// A Harmony postfix runs whether or not the game method did anything. Both
+		/// Clearable methods return at once when there is nothing to change, and the game
+		/// calls them constantly for no-ops: Pickupable.HandleSolidCell cancels the sweep
+		/// of every item sitting in a solid cell on every cell or solid change around
+		/// it, so a pile buried under a floor produced a packet per change, for hours
+		/// (100-200 "Target not found" per minute on the host). Only a mark that actually
+		/// changed is an order worth sending.
+		/// </summary>
 		[HarmonyPatch(typeof(Clearable), nameof(Clearable.MarkForClear))]
 		public static class ClearableMarkForClearPatch
 		{
-			public static void Postfix(Clearable __instance, bool restoringFromSave, bool allowWhenStored)
+			public static void Prefix(Clearable __instance, out bool __state)
+			{
+				__state = __instance != null && __instance.isMarkedForClear;
+			}
+
+			public static void Postfix(Clearable __instance, bool restoringFromSave, bool allowWhenStored, bool __state)
 			{
 				using var _ = Profiler.Scope();
 
 				if (restoringFromSave) return;
-				if (SuppressItemPackets > 0) return;
-				if (ClearableActionPacket.ProcessingIncoming) return;
-				if (ClearPacket.ProcessingIncoming) return;
-				if (!MultiplayerSession.InActiveSession) return;
 				if (__instance == null || __instance.gameObject == null) return;
+				if (__instance.isMarkedForClear == __state) return;
+				if (!ShouldSend()) return;
 				if (IsStored(__instance)) return;
 
 				Send(__instance, true);
@@ -57,18 +72,30 @@ namespace ONI_Together.Patches.World
 		[HarmonyPatch(typeof(Clearable), nameof(Clearable.CancelClearing))]
 		public static class ClearableCancelClearingPatch
 		{
-			public static void Postfix(Clearable __instance)
+			public static void Prefix(Clearable __instance, out bool __state)
+			{
+				__state = __instance != null && __instance.isMarkedForClear;
+			}
+
+			public static void Postfix(Clearable __instance, bool __state)
 			{
 				using var _ = Profiler.Scope();
 
-				if (SuppressItemPackets > 0) return;
-				if (ClearableActionPacket.ProcessingIncoming) return;
-				if (ClearPacket.ProcessingIncoming) return;
-				if (!MultiplayerSession.InActiveSession) return;
 				if (__instance == null || __instance.gameObject == null) return;
+				if (__instance.isMarkedForClear == __state) return;
+				if (!ShouldSend()) return;
 
 				Send(__instance, false);
 			}
+		}
+
+		private static bool ShouldSend()
+		{
+			if (SuppressItemPackets > 0) return false;
+			if (ClearableActionPacket.ProcessingIncoming) return false;
+			if (ClearPacket.ProcessingIncoming) return false;
+			if (OrderApplyScope.SuppressEchoes) return false;
+			return MultiplayerSession.InActiveSession;
 		}
 
 		/// <summary>
@@ -85,15 +112,22 @@ namespace ONI_Together.Patches.World
 
 		private static void Send(Clearable clearable, bool marked)
 		{
-			var identity = clearable.gameObject.GetNetIdentity();
+			// The id the item already has, never one minted on the way past: GetNetIdentity
+			// attaches a NetworkIdentity with a locally computed id, which the other side
+			// has never heard of (see PrioritizablePatch).
+			var go = clearable.gameObject;
+			var identity = go.GetExistingNetIdentity();
 			int netId = identity != null ? identity.NetId : 0;
-			int cell = Grid.PosToCell(clearable.gameObject);
+			int cell = Grid.PosToCell(go);
+			if (!Grid.IsValidCell(cell))
+				return;
 
 			var packet = new ClearableActionPacket
 			{
 				NetId = netId,
 				Cell = cell,
-				IsMarked = marked
+				IsMarked = marked,
+				PrefabID = go.TryGetComponent<KPrefabID>(out var prefab) ? prefab.PrefabTag.ToString() : string.Empty,
 			};
 
 			if (MultiplayerSession.IsHost)

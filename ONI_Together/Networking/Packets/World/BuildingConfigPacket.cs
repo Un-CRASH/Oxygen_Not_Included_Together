@@ -105,6 +105,18 @@ namespace ONI_Together.Networking.Packets.World
 				}
 			}
 
+			// A building raised by a BuildCompletePacket in the same batch is in Grid.Objects
+			// but has not spawned yet (its components are half-initialised: the refrigerator
+			// crash in FoodStorage.set_SpicedFoodOnly), and a building raised on the next
+			// frame is not there at all. Both cases wait a frame, a few times.
+			bool unspawned = identity != null && identity.gameObject.TryGetComponent<KMonoBehaviour>(out var kmb) && !kmb.isSpawned;
+			if ((identity == null || unspawned) && _retries < MaxRetries && GameScheduler.Instance != null)
+			{
+				_retries++;
+				GameScheduler.Instance.ScheduleNextFrame("ONI_Together.BuildingConfigRetry", _ => OnDispatched());
+				return;
+			}
+
 			if (identity != null)
 			{
 				try
@@ -133,9 +145,12 @@ namespace ONI_Together.Networking.Packets.World
 			}
 			else
 			{
-				DebugConsole.LogWarning($"[BuildingConfigPacket] FAILED to resolve entity for NetId {NetId} at Cell {Cell}");
+				DebugConsole.LogWarning($"[BuildingConfigPacket] FAILED to resolve entity for NetId {NetId} at Cell {Cell} after {_retries} retries");
 			}
 		}
+
+		private int _retries;
+		private const int MaxRetries = 30;
 
         /// <summary>
         /// Applies the configuration to the target building.

@@ -25,7 +25,10 @@ public static class ConstructablePatch
 
 		var materialTags = __instance.SelectedElementsTags?.Select(tag => tag.ToString()).ToList() ?? new System.Collections.Generic.List<string>();
 
-		float temp = __instance.GetComponent<PrimaryElement>()?.Temperature ?? def.Temperature;
+		// The ghost's PrimaryElement never gets a temperature; the game builds from
+		// Constructable.initialTemperature, the mass-weighted temperature of the
+		// delivered materials, computed just before this call.
+		float temp = __instance.initialTemperature > 1f ? __instance.initialTemperature : def.Temperature;
 
 		var rotatable = __instance.GetComponent<Rotatable>();
 		var orientation = rotatable != null ? rotatable.GetOrientation() : Orientation.Neutral;
@@ -63,7 +66,8 @@ public static class ConstructablePatch
 			FacadeID = facade,
 			UtilityConnectionFlags = utilityConnectionFlags,
 			ObjectLayer = def.ObjectLayer,
-			WorkerNetId = workerId
+			WorkerNetId = workerId,
+			IsReplacementTile = __instance.IsReplacementTile
 		};
 
 		PacketSender.SendToAllClients(packet);

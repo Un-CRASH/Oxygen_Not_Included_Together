@@ -27,6 +27,8 @@ namespace ONI_Together.Networking.Packets.Tools
 		/// </summary>
 		public static bool ProcessingIncoming { get; private set; } = false;
 
+		internal static void ResetState() => ProcessingIncoming = false;
+
 		private static long _restoredCount;
 
 		public enum DragToolMode
@@ -124,6 +126,9 @@ namespace ONI_Together.Networking.Packets.Tools
 
 			Vector3 cachedDownPos = ToolInstance.downPos;
 			ProcessingIncoming = true;
+			// Everything the tool triggers (cancel/deconstruct per building, sweep marks,
+			// priorities) belongs to this order; the echo patches stay quiet.
+			using var scope = OrderApplyScope.Enter();
 			bool completed = false;
 			try
 			{

@@ -262,6 +262,30 @@ namespace ONI_Together.Networking.Components
 			}
 		}
 
+		// --- Placer grace period ---
+
+		private static readonly Dictionary<int, float> _recentPlacers = new Dictionary<int, float>();
+		private const float PlacerGraceSeconds = 8f;
+
+		/// <summary>A dig or mop placer appeared at this cell (own order or a remote one).</summary>
+		public static void NotePlacerSpawned(int cell)
+		{
+			if (!Grid.IsValidCell(cell)) return;
+			_recentPlacers[cell] = Time.unscaledTime;
+			if (_recentPlacers.Count > 4096)
+			{
+				var stale = new List<int>();
+				foreach (var kvp in _recentPlacers)
+					if (Time.unscaledTime - kvp.Value > PlacerGraceSeconds) stale.Add(kvp.Key);
+				foreach (var cell2 in stale) _recentPlacers.Remove(cell2);
+			}
+		}
+
+		private static bool IsRecentPlacer(int cell)
+		{
+			return _recentPlacers.TryGetValue(cell, out var at) && Time.unscaledTime - at < PlacerGraceSeconds;
+		}
+
 		// --- Digging Logic ---
 
 			private void SyncDigging()
@@ -283,7 +307,10 @@ namespace ONI_Together.Networking.Components
 					}
 				}
 
-				PacketSender.SendToAllClients(digPacket, PacketSendMode.Unreliable);
+				// Reliable: the list is the only thing that repairs a missed dig order, and
+				// the receiver deletes what the list lacks, so a stale or lost copy must not
+				// be the one that survives.
+				PacketSender.SendToAllClients(digPacket, PacketSendMode.Reliable);
 
 				sw.Stop();
 				SyncStats.RecordSync(SyncStats.Digging, digPacket.DigCells.Count, digPacket.DigCells.Count * 4, sw.ElapsedMilliseconds);
@@ -312,7 +339,10 @@ namespace ONI_Together.Networking.Components
 				{
 					int cell = Grid.PosToCell(diggable);
 					localDigs.Add(cell);
-					if (!packet.DigCells.Contains(cell))
+					// The host sampled its list before it applied an order this side placed a
+					// moment ago; deleting that placer here made the client lose its own dig
+					// order while the host kept it. A young placer is left alone.
+					if (!packet.DigCells.Contains(cell) && !IsRecentPlacer(cell))
 					{
 						toRemove.Add(diggable);
 					}
@@ -376,7 +406,7 @@ namespace ONI_Together.Networking.Components
 					}
 				}
 
-				PacketSender.SendToAllClients(chorePacket, PacketSendMode.Unreliable);
+				PacketSender.SendToAllClients(chorePacket, PacketSendMode.Reliable);
 
 				sw.Stop();
 				SyncStats.RecordSync(SyncStats.Chores, chorePacket.Chores.Count, chorePacket.Chores.Count * 5, sw.ElapsedMilliseconds);
@@ -417,7 +447,7 @@ namespace ONI_Together.Networking.Components
 							}
 						}
 
-						if (!existsRemote)
+						if (!existsRemote && !IsRecentPlacer(cell))
 						{
 							toRemove.Add(go);
 						}

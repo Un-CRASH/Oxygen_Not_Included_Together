@@ -130,6 +130,7 @@ namespace ONI_Together.Networking.Packets.Tools
 				{
 					bool wasProcessingIncoming = ProcessingIncoming;
 					ProcessingIncoming = true;
+					using var scope = OrderApplyScope.Enter();
 					try
 					{
 						if (DebugConsole.IsVerbose) DebugConsole.LogVerbose($"[BuildingAction] apply NetId={NetId} kind={Action} name={target.name} cell={Cell}");

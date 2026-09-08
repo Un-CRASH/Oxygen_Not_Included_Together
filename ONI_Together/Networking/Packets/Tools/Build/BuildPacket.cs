@@ -1,5 +1,6 @@
 ﻿using ONI_Together.DebugTools;
 using ONI_Together.Networking.Packets.Architecture;
+using ONI_Together.Networking.Packets.Tools;
 using Steamworks;
 using System.Collections.Generic;
 using System.IO;
@@ -37,8 +38,17 @@ namespace ONI_Together.Networking.Packets.Tools.Build
             MaterialTags = materials.Select(t => t.ToString()).ToList();
             InstantBuild = instantBuild;
 
-            if (PlanScreen.Instance)
-                Priority = PlanScreen.Instance.GetBuildingPriority();
+            // The build menu's priority widget only exists while the menu is open; a
+            // placement made from code (tests, other mods) must not fail on it.
+            try
+            {
+                if (PlanScreen.Instance)
+                    Priority = PlanScreen.Instance.GetBuildingPriority();
+            }
+            catch (System.NullReferenceException)
+            {
+                Priority = new PrioritySetting(PriorityScreen.PriorityClass.basic, 5);
+            }
 
             ObjectLayer = objectLayer;
         }
@@ -105,6 +115,10 @@ namespace ONI_Together.Networking.Packets.Tools.Build
                         if (IsRepeat(def))
                             return;
 
+                        // The placement and its priority are one remote order; nothing in here
+                        // may echo back as a packet of its own.
+                        using var scope = OrderApplyScope.Enter();
+
                         var selected_elements = MaterialTags.Select(t => TagManager.Create(t)).ToList();
                         Vector3 pos = Grid.CellToPosCBC(Cell, Grid.SceneLayer.Building);
 
@@ -127,11 +141,18 @@ namespace ONI_Together.Networking.Packets.Tools.Build
                         if (builtItem != null)
                             DebugConsole.Log($"[BuildPacket] Built item {def.PrefabID} at cell {Cell}");
                         else
-                            DebugConsole.Log($"[BuildPacket] Nothing to build for {def.PrefabID} at cell {Cell}");
+                            DebugConsole.LogWarning($"[BuildPacket] Nothing to build for {def.PrefabID} at cell {Cell}: layer holds {Describe(Grid.Objects[Cell, (int)def.ObjectLayer])}, solid={Grid.Solid[Cell]}");
+                    }
+
+                    private static string Describe(GameObject go)
+                    {
+                        if (go == null) return "nothing";
+                        string state = go.GetComponent<Constructable>() != null ? "under construction" : go.GetComponent<BuildingComplete>() != null ? "complete" : "other";
+                        return $"{go.name} ({state})";
                     }
 
                     private static int _frame = -1;
-                    private static readonly HashSet<(int, string, int)> _appliedThisFrame = new HashSet<(int, string, int)>();
+                    private static readonly HashSet<(int, string, int, int)> _appliedThisFrame = new HashSet<(int, string, int, int)>();
 
                     /// <summary>
                     /// A second order for the same building at the same cell is a repeat, never a
@@ -154,7 +175,7 @@ namespace ONI_Together.Networking.Packets.Tools.Build
                             _appliedThisFrame.Clear();
                         }
 
-                        if (!_appliedThisFrame.Add((Cell, PrefabID, (int)def.ObjectLayer)))
+                        if (!_appliedThisFrame.Add((Cell, PrefabID, (int)def.ObjectLayer, (int)Orientation)))
                         {
                             DebugConsole.Log($"[BuildPacket] Repeat of {def.PrefabID} at cell {Cell} in the same frame - skipped");
                             return true;

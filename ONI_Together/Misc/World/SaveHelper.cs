@@ -94,6 +94,8 @@ public static class SaveHelper
 		PacketHandler.readyToProcess = false;
 		NetworkIdentityRegistry.Clear();
 		ONI_Together.Networking.OxySync.Components.OxySyncManager.ClearAll();
+		ONI_Together.Networking.Packets.Tools.OrderSyncState.ResetAll();
+		ONI_Together.Networking.Components.IdCensus.Reset();
 		MultiplayerSession.PlayerCursors.Clear();
 				MultiplayerOverlay.Show(global::STRINGS.UI.FRONTEND.LOADING);
 

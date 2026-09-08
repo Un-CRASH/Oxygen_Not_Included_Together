@@ -16,6 +16,9 @@ namespace ONI_Together.Patches.World
 
 			if (PrioritizeStatePacket.IsApplying) return;
 			if (DragToolPacket.ProcessingIncoming) return;
+			// A dig, build or utility order being applied sets the priority of what it
+			// placed; that is part of the order, not a change to send back.
+			if (OrderApplyScope.SuppressEchoes) return;
 			if (!MultiplayerSession.InActiveSession) return;
 			if (__instance == null || __instance.gameObject == null) return;
 
@@ -32,11 +35,12 @@ namespace ONI_Together.Patches.World
 			int netId = identity != null ? identity.NetId : 0;
 			int cell = Grid.PosToCell(__instance.gameObject);
 
-			var packet = new PrioritizeStatePacket();
+			var packet = new PrioritizeStatePacket { Sender = NetworkConfig.GetLocalID() };
 			packet.Priorities.Add(new PrioritizeStatePacket.PriorityData
 			{
 				NetId = netId,
 				Cell = cell,
+				Layer = PrioritizeStatePacket.LayerOf(__instance.gameObject, cell),
 				PriorityClass = (int)priority.priority_class,
 				PriorityValue = priority.priority_value
 			});

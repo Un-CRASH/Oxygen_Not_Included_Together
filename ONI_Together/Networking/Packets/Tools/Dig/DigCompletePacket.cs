@@ -1,5 +1,7 @@
-﻿using ONI_Together.Networking;
+﻿using ONI_Together.DebugTools;
+using ONI_Together.Networking;
 using ONI_Together.Networking.Packets.Architecture;
+using ONI_Together.Networking.Packets.Tools;
 using System.IO;
 using Shared.Profiling;
 using UnityEngine;
@@ -45,20 +47,19 @@ public class DigCompletePacket : IPacket
 			return;
 
 		if (!Grid.IsValidCell(Cell))
-			return;
-
-		// Destroy dig placers or tile visuals
-		for (int i = 0; i < (int)Grid.SceneLayer.SceneMAX; i++)
 		{
-			GameObject obj = Grid.Objects[Cell, i];
-			if (obj != null)
-			{
-				if (obj.HasTag(new Tag("DigPlacer")))
-				{
-					Util.KDestroyGameObject(obj);
-				}
-			}
+			DebugConsole.LogWarning($"[DigCompletePacket] Invalid cell {Cell}");
+			return;
 		}
+
+		using var scope = OrderApplyScope.Enter();
+		bool wasSolid = Grid.Solid[Cell];
+
+		// Destroy the dig placer (Grid.Objects is indexed by ObjectLayer; the old loop
+		// used the SceneLayer count as its bound).
+		GameObject placer = Grid.Objects[Cell, (int)ObjectLayer.DigPlacer];
+		if (placer != null && placer.HasTag(new Tag("DigPlacer")))
+			Util.KDestroyGameObject(placer);
 
 		// Spawn ore + FX from the dig
 		//WorldDamage.Instance.OnDigComplete(Cell, Mass, Temperature, ElementIdx, DiseaseIdx, DiseaseCount);
@@ -66,5 +67,6 @@ public class DigCompletePacket : IPacket
 		WorldDamage.Instance.DestroyCell(Cell);
 		// Trigger on solid state changed
 		WorldDamage.Instance.OnSolidStateChanged(Cell);
+		DebugConsole.Log($"[DigCompletePacket] Destroyed cell {Cell}" + (wasSolid ? "" : " (was not solid here)"));
 	}
 }

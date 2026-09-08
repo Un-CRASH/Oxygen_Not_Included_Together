@@ -23,6 +23,9 @@ namespace ONI_Together.Patches.ToolPatches.Cancel
 			{
 				if (!MultiplayerSession.InActiveSession) return;
 				if (BuildingActionCellPacket.ProcessingIncoming) return;
+				// A remote order being applied, or the local drag tool running (its cells are
+				// synced by the drag packet): this event is not a new order.
+				if (OrderApplyScope.SuppressEchoes) return;
 				// Drag path already syncs via CancelPacket; skip here to avoid double-send.
 				if (DragToolPacket.ProcessingIncoming) return;
 

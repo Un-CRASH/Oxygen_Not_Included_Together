@@ -25,6 +25,9 @@ namespace ONI_Together.Patches.ToolPatches.Deconstruct
 			{
 				if (!MultiplayerSession.InActiveSession) return;
 				if (BuildingActionCellPacket.ProcessingIncoming) return;
+				// A remote order being applied, or the local drag tool running (its cells are
+				// synced by the drag packet): this event is not a new order.
+				if (OrderApplyScope.SuppressEchoes) return;
 				// Drag path already has its own sync via DeconstructPacket; don't double-send.
 				// This patch exists specifically for non-drag entry points.
 				if (DragToolPacket.ProcessingIncoming) return;

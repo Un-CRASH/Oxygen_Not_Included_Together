@@ -102,6 +102,7 @@ namespace ONI_Together.Networking
 			WorkProgressPatch.ClearTracking();
 			RemoteProgressRegistry.ClearAll();
 			Synchronization.GameClockSync.Reset();
+			Packets.Tools.OrderSyncState.ResetAll();
 
 			IsQuitting = false;
 

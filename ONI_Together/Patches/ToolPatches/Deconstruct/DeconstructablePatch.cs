@@ -32,10 +32,11 @@ namespace ONI_Together.Patches.ToolPatches.Deconstruct
                 objectLayer = (int)occupier.objectLayers.FirstOrDefault();
             }
 
-            var packet = new DeconstructCompletePacket { Cell = cell, ObjectLayer = objectLayer };
+            string prefabId = __instance.TryGetComponent<KPrefabID>(out var prefab) ? prefab.PrefabTag.ToString() : string.Empty;
+            var packet = new DeconstructCompletePacket { Cell = cell, ObjectLayer = objectLayer, PrefabID = prefabId };
             PacketSender.SendToAllClients(packet);
 
-			DebugConsole.Log($"[DeconstructComplete] Host sent DeconstructCompletePacket for cell {cell}");
+			DebugConsole.Log($"[DeconstructComplete] Host sent DeconstructCompletePacket for {prefabId} at cell {cell}");
 		}
 	}
 }

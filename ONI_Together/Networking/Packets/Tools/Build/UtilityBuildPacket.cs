@@ -23,6 +23,8 @@ namespace ONI_Together.Networking.Packets.Tools.Build
 		/// </summary>
 		public static bool ProcessingIncoming { get; private set; } = false;
 
+		internal static void ResetState() => ProcessingIncoming = false;
+
 		public ulong[] PathChunks;
 		public List<string> MaterialTags = [];
 		public string PrefabID, FacadeID;
@@ -174,6 +176,8 @@ namespace ONI_Together.Networking.Packets.Tools.Build
 			ProcessingIncoming = true;
 			bool cachedInstantBuildMode = DebugHandler.InstantBuildMode;
 			DebugHandler.InstantBuildMode = InstantBuild;
+			// Priorities set on the path nodes are part of this order, not new ones.
+			using var applyScope = OrderApplyScope.Enter();
 			try
 			{
 				tool.BuildPath();

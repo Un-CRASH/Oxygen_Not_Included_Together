@@ -9,6 +9,7 @@ namespace ONI_Together.Networking.Trackers
 	{
 		public static readonly HashSet<GameObject> MopPlacers = new HashSet<GameObject>();
 		private static readonly Tag MopPlacerTag = new Tag("MopPlacer");
+		private static readonly Tag DigPlacerTag = new Tag("DigPlacer");
 
 		[HarmonyPatch(typeof(KPrefabID), "OnSpawn")]
 		public static class KPrefabID_OnSpawn_Patch
@@ -24,6 +25,8 @@ namespace ONI_Together.Networking.Trackers
 						MopPlacers.Add(__instance.gameObject);
 					}
 				}
+				if (__instance.PrefabTag == MopPlacerTag || __instance.PrefabTag == DigPlacerTag)
+					Components.WorldStateSyncer.NotePlacerSpawned(Grid.PosToCell(__instance.gameObject));
 			}
 		}
 
