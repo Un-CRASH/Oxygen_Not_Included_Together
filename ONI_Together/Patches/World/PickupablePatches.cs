@@ -38,11 +38,15 @@ namespace ONI_Together.Patches.World
 		internal const float LocalItemGraceSeconds = 5f;
 		internal static int LocalItemsRemoved;
 
-		private static void ScheduleLocalItemCheck(Pickupable pickupable)
+		// After the twin check at 5 s: two more looks, 30 s and 90 s after the spawn.
+		private static readonly float[] LocalItemRecheckSeconds = { 25f, 60f };
+
+		private static void ScheduleLocalItemCheck(Pickupable pickupable, int attempt = 0)
 		{
 			if (GameScheduler.Instance == null)
 				return;
-			GameScheduler.Instance.Schedule("ONI_Together.LocalItem", LocalItemGraceSeconds, _ =>
+			float delay = attempt == 0 ? LocalItemGraceSeconds : LocalItemRecheckSeconds[attempt - 1];
+			GameScheduler.Instance.Schedule("ONI_Together.LocalItem", delay, _ =>
 			{
 				if (!MultiplayerSession.IsClient || !MultiplayerSession.InActiveSession)
 					return;
@@ -56,16 +60,26 @@ namespace ONI_Together.Patches.World
 					return;
 				if (ONI_Together.Networking.Synchronization.WorldGenSpawnMap.IsLocalPending(go))
 					return;
-				// Only a duplicate of something the host has at this very cell - the client's
-				// own drip next to the host's pile. Anything else this side made on its own
-				// (a chunk that fell, a container's contents) stays: a first version removed
-				// every locally made loose item and took fridge contents and dug ore with it.
+				// A loose item on a client is the host's: loaded from the save, announced by
+				// the host, or dropped out of a container (announced then too). One this side
+				// made on its own is a duplicate of something the host has - its own drip
+				// next to the host's pile, its own harvest next to the host's - or, when the
+				// host's copy was swept before we looked, a copy of nothing. The first is
+				// removed as soon as the twin is seen in the same cell; the second after the
+				// host has had 90 s to claim it and did not. (A first version removed every
+				// local item at 5 s and took fridge contents and dug ore with it; a second
+				// removed only twins and left a harvest ghost per crop.)
 				int cell = Grid.PosToCell(go);
-				if (!Grid.IsValidCell(cell) || !HasHostTwinAtCell(go, cell))
+				bool twin = Grid.IsValidCell(cell) && HasHostTwinAtCell(go, cell);
+				if (!twin && attempt < LocalItemRecheckSeconds.Length)
+				{
+					ScheduleLocalItemCheck(pickupable, attempt + 1);
 					return;
+				}
 				LocalItemsRemoved++;
 				var primary = pickupable.GetComponent<PrimaryElement>();
-				DebugConsole.LogAggregated("Pickupable.LocalDiscarded", $"[PickupablePatches] {pickupable.name} at cell {cell} ({(primary != null ? primary.Mass : 0f):F2} kg) was created by this client's own simulation next to the host's copy; removed ({LocalItemsRemoved} so far)");
+				string why = twin ? "next to the host's copy" : "and the host never claimed it in 90 s";
+				DebugConsole.LogAggregated(twin ? "Pickupable.LocalDiscarded" : "Pickupable.LocalOrphan", $"[PickupablePatches] {pickupable.name} at cell {cell} ({(primary != null ? primary.Mass : 0f):F2} kg) was created by this client's own simulation {why}; removed ({LocalItemsRemoved} so far)");
 				Util.KDestroyGameObject(go);
 			});
 		}
