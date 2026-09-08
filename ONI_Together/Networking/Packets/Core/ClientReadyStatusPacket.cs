@@ -106,6 +106,12 @@ namespace ONI_Together.Networking.Packets.Core
             ReadyManager.SetPlayerReadyState(player, Status);
 			DebugConsole.Log($"[ClientReadyStatusPacket] {SenderId} marked as {Status}");
 
+			// The state that goes to everyone (container contents, vitals, plant growth,
+			// game speed) has no chunk to be snapshotted with; a player who has just
+			// loaded gets it here, on every join and after every hard sync.
+			if (Status == ClientReadyState.Ready && SenderId != MultiplayerSession.HostUserID)
+				ONI_Together.Networking.OxySync.Components.OxySyncManager.SendFullStateToPlayerForGroup(SenderId, -1);
+
 			if (NetworkConfig.IsLanConfig() && nameChanged)
 			{
 				var server = NetworkConfig.TransportServer as LiteNetLibServer;

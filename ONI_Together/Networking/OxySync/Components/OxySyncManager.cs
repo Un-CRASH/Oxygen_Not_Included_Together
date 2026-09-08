@@ -415,7 +415,10 @@ namespace ONI_Together.Networking.OxySync.Components
             var grouped = new HashSet<int>();
 
             int primaryGroup = behaviour.InterestGroup;
-            if (primaryGroup != -1 && grouped.Add(primaryGroup))
+            // A fixed-group behaviour (group -1, sent to everyone) is filed under -1 so the
+            // player who has just become ready can be sent its state as a snapshot too;
+            // until now nothing delivered such state to a joining player until it changed.
+            if ((primaryGroup != -1 || _explicitGroupTypes.Contains(behaviour.GetType())) && grouped.Add(primaryGroup))
                 AddBehaviourToGroupIndex(behaviour, primaryGroup);
 
             for (int i = 0; i < fields.Count; i++)
@@ -469,6 +472,8 @@ namespace ONI_Together.Networking.OxySync.Components
                 Connection = player.Connection,
                 Behaviours = new Queue<NetworkBehaviour>(behavioursInGroup)
             };
+            if (groupId == -1)
+                DebugConsole.Log($"[OxySync] Global snapshot queued for player {playerId}: {behavioursInGroup.Count} behaviours");
         }
 
         private void PumpPendingSnapshots()

@@ -101,8 +101,23 @@ namespace ONI_Together.Misc
 
             float capacityKg = reader.ReadSingle();
             int count = reader.ReadInt32();
-            ClearStorage(storage);
-            if (count == 0) return;
+
+            // Applied as a difference, not as empty-and-refill. The items a client loaded
+            // from the save carry the host's ids; deleting them and instantiating fresh
+            // copies gave a container's contents new, local ids on every snapshot, so a
+            // host packet naming a stored item never resolved here. An item of the same
+            // prefab that is already there is kept and its mass and temperature set; only
+            // what is missing is created and only what is gone is deleted. Suits and
+            // animals (IsEntityNotContents) are left alone either way.
+            var existing = new List<GameObject>();
+            for (int i = 0; i < storage.items.Count; i++)
+            {
+                var item = storage.items[i];
+                if (item == null || item.IsNullOrDestroyed()) continue;
+                if (IsEntityNotContents(item)) continue;
+                existing.Add(item);
+            }
+            var matched = new bool[existing.Count];
 
             for (int i = 0; i < count; i++)
             {
@@ -114,28 +129,60 @@ namespace ONI_Together.Misc
                 if (mass <= 0f) continue;
 
                 Tag tag = new Tag(hash);
+                int found = -1;
+                for (int j = 0; j < existing.Count; j++)
+                {
+                    if (matched[j] || existing[j].PrefabID() != tag) continue;
+                    found = j;
+                    break;
+                }
+                if (found >= 0)
+                {
+                    matched[found] = true;
+                    var pe = existing[found].GetComponent<PrimaryElement>();
+                    if (pe != null)
+                    {
+                        if (Mathf.Abs(pe.Mass - mass) > 0.0005f) pe.Mass = mass;
+                        if (Mathf.Abs(pe.Temperature - temperature) > 0.01f) pe.Temperature = temperature;
+                    }
+                    continue;
+                }
+
                 Element elementByHash = ElementLoader.GetElement(tag);
                 if (elementByHash != null)
                 {
                     storage.AddElement(elementByHash.id, mass, temperature, diseaseIdx, diseaseCount);
+                    continue;
                 }
-                else
-                {
-                    var item = Assets.GetPrefab(tag);
-                    if (item == null) continue;
 
-                    var scrapObject = GameUtil.KInstantiate(item, storage.transform.position, Grid.SceneLayer.Ore);
-                    if (scrapObject.TryGetComponent<PrimaryElement>(out var pe))
-                    {
-                        pe.Mass = mass;
-                        pe.Temperature = temperature;
-                        if (diseaseIdx != byte.MaxValue)
-                            pe.AddDisease(diseaseIdx, diseaseCount, diseaseReason);
-                    }
-                    scrapObject.SetActive(true);
-                    storage.Store(scrapObject, true, true);
+                var prefab = Assets.GetPrefab(tag);
+                if (prefab == null) continue;
+
+                var scrapObject = GameUtil.KInstantiate(prefab, storage.transform.position, Grid.SceneLayer.Ore);
+                if (scrapObject.TryGetComponent<PrimaryElement>(out var newPe))
+                {
+                    newPe.Mass = mass;
+                    newPe.Temperature = temperature;
+                    if (diseaseIdx != byte.MaxValue)
+                        newPe.AddDisease(diseaseIdx, diseaseCount, diseaseReason);
                 }
+                scrapObject.SetActive(true);
+                // Stored the way the game restores a save: no merging into a stack that is
+                // already there (the host keeps them apart, so the count must match) and
+                // with the events on, so the item knows its container (Pickupable.storage),
+                // leaves the ground layer and the side screen refreshes. Stored with the
+                // events blocked, as before, a rebuilt item stayed a loose item at the
+                // container's cell as far as the rest of the game could tell.
+                storage.Store(scrapObject, true, false, true, true);
+                storage.ApplyStoredItemModifiers(scrapObject, true, false);
             }
+
+            for (int j = 0; j < existing.Count; j++)
+            {
+                if (!matched[j])
+                    existing[j].DeleteObject();
+            }
+            storage.items.RemoveAll(item => item == null || item.IsNullOrDestroyed());
         }
         
         /// <summary>
