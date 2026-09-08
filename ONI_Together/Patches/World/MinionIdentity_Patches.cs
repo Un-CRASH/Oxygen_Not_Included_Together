@@ -35,7 +35,12 @@ namespace ONI_Together.Patches.World
 
 				if (ApplyingPacket)
 					return;
-				PacketSender.SendToAllOtherPeers(new MinionIdentitySetNamePacket(__instance.GetNetId(), name));
+				// The printing pod names its candidate duplicants too; they exist only inside
+				// the host's screen, have no identity and are unknown to every client.
+				var identity = __instance.gameObject.GetExistingNetIdentity();
+				if (identity == null || identity.NetId == 0 || !NetworkIdentityRegistry.Exists(identity.NetId))
+					return;
+				PacketSender.SendToAllOtherPeers(new MinionIdentitySetNamePacket(identity.NetId, name));
 			}
 		}
 	}

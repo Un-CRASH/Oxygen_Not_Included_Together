@@ -50,7 +50,25 @@ namespace Shared.OxySync
         public float _lastSyncTime;
         public float _lastActiveSyncTime;
         public int InterestGroup { get; set; } = -1;
-        public int BehaviourId { get; set; } = -1;
+
+        private int _behaviourId = -1;
+
+        /// <summary>
+        /// A pure function of the type, resolved on first use. It used to be assigned
+        /// only in OnSpawn, so a behaviour added to an already spawned object (spawn
+        /// packets, sandbox tools, structure sync) kept -1 for its whole life and every
+        /// SyncVar and RPC addressed to it was dropped.
+        /// </summary>
+        public int BehaviourId
+        {
+            get
+            {
+                if (_behaviourId == -1)
+                    _behaviourId = ResolveBehaviourId(GetType());
+                return _behaviourId;
+            }
+            set => _behaviourId = value;
+        }
 
         /// <summary>
         /// The NetId the sync manager filed this behaviour under. NetId above is read
@@ -466,17 +484,42 @@ namespace Shared.OxySync
             InvokeMethod(method, args);
         }
 
+        private static readonly HashSet<(Type, int, int)> _missingRpcWarned = new();
+
+        private void WarnMissingRpc(int kind, int methodHash)
+        {
+            if (_missingRpcWarned.Add((GetType(), kind, methodHash)))
+                LogWarning?.Invoke($"[OxySync] {GetType().Name} has no {(kind == 0 ? "ClientRpc" : "TargetRpc")} with hash {methodHash}; call dropped (logged once).");
+        }
+
         public void InvokeClientRpc(int methodHash, byte[] args)
         {
-            if (_clientRpcMethods == null) return;
-            if (!_clientRpcMethods.TryGetValue(methodHash, out var method)) return;
+            if (_clientRpcMethods == null || !_clientRpcMethods.TryGetValue(methodHash, out var method))
+            {
+                // The other table, in case a caller routed the kinds the wrong way round.
+                if (_targetRpcMethods != null && _targetRpcMethods.TryGetValue(methodHash, out method))
+                {
+                    InvokeMethod(method, args);
+                    return;
+                }
+                WarnMissingRpc(0, methodHash);
+                return;
+            }
             InvokeMethod(method, args);
         }
 
         public void InvokeTargetRpc(int methodHash, byte[] args)
         {
-            if (_targetRpcMethods == null) return;
-            if (!_targetRpcMethods.TryGetValue(methodHash, out var method)) return;
+            if (_targetRpcMethods == null || !_targetRpcMethods.TryGetValue(methodHash, out var method))
+            {
+                if (_clientRpcMethods != null && _clientRpcMethods.TryGetValue(methodHash, out method))
+                {
+                    InvokeMethod(method, args);
+                    return;
+                }
+                WarnMissingRpc(1, methodHash);
+                return;
+            }
             InvokeMethod(method, args);
         }
 

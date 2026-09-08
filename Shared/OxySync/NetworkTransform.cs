@@ -58,6 +58,11 @@ namespace Shared.OxySync
 
         protected float _lastRequestTime;
         protected const float REQUEST_COOLDOWN = 0.5f;
+        // Doubles while requests go unanswered (up to MAX_REQUEST_BACKOFF), reset by a
+        // reply: an entity the host will not answer for must not cost two packets a
+        // second forever.
+        protected float _requestBackoff = REQUEST_COOLDOWN;
+        protected const float MAX_REQUEST_BACKOFF = 8f;
 
         // The clock of the host, as seen from this client.
         //
@@ -359,10 +364,11 @@ namespace Shared.OxySync
         {
             if (!ShouldRequestPosition()) return;
 
-            if (Time.unscaledTime - _lastRequestTime < REQUEST_COOLDOWN)
+            if (Time.unscaledTime - _lastRequestTime < _requestBackoff)
                 return;
 
             _lastRequestTime = Time.unscaledTime;
+            _requestBackoff = Math.Min(_requestBackoff * 2f, MAX_REQUEST_BACKOFF);
             CallCommand(nameof(CmdRequestPositionSync), LocalUserIdQuery?.Invoke() ?? 0);
         }
 
@@ -386,6 +392,7 @@ namespace Shared.OxySync
         [TargetRpc]
         protected void TargetReceivePosition(Vector3 position, Quaternion rotation, Vector3 scale)
         {
+            _requestBackoff = REQUEST_COOLDOWN;
             _netPosition = position;
             _netRotation = rotation;
             _netScale = scale;

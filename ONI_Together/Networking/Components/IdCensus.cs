@@ -159,7 +159,8 @@ namespace ONI_Together.Networking.Components
                 if (id == 0) continue;
                 Checked++;
 
-                if (NetworkIdentityRegistry.TryGet(id, out var identity) && !identity.IsNullOrDestroyed())
+                // A miss here is the census's own finding, not a lookup failure to count.
+                if (NetworkIdentityRegistry.TryGet(id, out var identity, logFailure: false) && !identity.IsNullOrDestroyed())
                     continue;
 
                 _missingThisCycle.Add(id);

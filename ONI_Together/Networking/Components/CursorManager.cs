@@ -135,8 +135,11 @@ namespace ONI_Together.Networking.Components
 				Grid.PosToXY(bl, out int x1, out int y1);
 				Grid.PosToXY(tr, out int x2, out int y2);
 
-				minX = x1; minY = y1;
-				maxX = x2; maxY = y2;
+				// Inflate by the shared margin so the host streams the ring the client
+				// already watches (see WorldChunkHelper.ViewMarginCells).
+				int margin = ONI_Together.Networking.OxySync.WorldChunkHelper.ViewMarginCells;
+				minX = Mathf.Max(0, x1 - margin); minY = Mathf.Max(0, y1 - margin);
+				maxX = Mathf.Min(Grid.WidthInCells - 1, x2 + margin); maxY = Mathf.Min(Grid.HeightInCells - 1, y2 + margin);
 			}
 
 			var interfaceTool = PlayerController.Instance.ActiveTool;

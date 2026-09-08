@@ -117,7 +117,7 @@ namespace ONI_Together.Networking.OxySync.Components
             int inView = 0;
             int stale = 0;
             bool haveViewport = WorldStateSyncer.TryGetLocalViewport(out var viewport);
-            int margin = WorldChunkHelper.ChunkSize * 2;
+            int margin = WorldChunkHelper.ViewMarginCells;
 
             foreach (var handler in _live)
             {
@@ -140,7 +140,9 @@ namespace ONI_Together.Networking.OxySync.Components
                 return false;
 
             int cell = Grid.PosToCell(transform.position);
-            int margin = WorldChunkHelper.ChunkSize * 2;
+            // The same margin the host subscribes around the viewport: an entity counted
+            // as in view here is one the host actually streams.
+            int margin = WorldChunkHelper.ViewMarginCells;
             if (!WorldStateSyncer.IsCellInRect(cell, viewport, margin)) return false;
             return Time.unscaledTime - _lastSyncReceivedTime > STALE_THRESHOLD;
         }
@@ -156,7 +158,11 @@ namespace ONI_Together.Networking.OxySync.Components
         [TargetRpc]
         private void TargetRpcReceiveFullState(Vector3 position, bool flipX, bool flipY, NavType navType)
         {
-            // Clients can not set sync vars, just teleport the dupe
+            // Clients can not set sync vars, just teleport the dupe. The interpolator
+            // writes _netPosition back every frame, so it must learn the new place too
+            // or it undoes the teleport on the next frame.
+            _netPosition = position;
+            _requestBackoff = REQUEST_COOLDOWN;
             transform.SetPosition(position);
             if (kbac != null)
             {

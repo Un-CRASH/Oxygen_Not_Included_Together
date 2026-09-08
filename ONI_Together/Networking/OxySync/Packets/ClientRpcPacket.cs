@@ -56,7 +56,15 @@ namespace ONI_Together.Networking.OxySync.Packets
             if (behaviour == null)
                 return;
 
-            behaviour.InvokeClientRpc(MethodHash, Args);
+            // A TargetRpc travels in this packet with the player id set; its handlers live
+            // in the behaviour's TargetRpc table, not the ClientRpc one. Every full-state
+            // position reply the host sent was looked up in the wrong table and dropped
+            // without a word, so the clients re-asked twice a second per stale duplicant
+            // for the whole session (the CommandPacket flood).
+            if (TargetPlayerId != ulong.MaxValue)
+                behaviour.InvokeTargetRpc(MethodHash, Args);
+            else
+                behaviour.InvokeClientRpc(MethodHash, Args);
         }
     }
 }

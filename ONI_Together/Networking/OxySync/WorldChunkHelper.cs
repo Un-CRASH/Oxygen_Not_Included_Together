@@ -7,6 +7,15 @@ namespace ONI_Together.Networking.OxySync
 	public static class WorldChunkHelper
 	{
 		public static int ChunkSize { get; set; } = 16;
+
+		/// <summary>
+		/// Cells around a player's camera rectangle that count as "in view": the host
+		/// subscribes the chunks of the inflated rectangle (CursorManager) and the client
+		/// judges staleness inside the same rectangle (OxySyncEntityPositionHandler). The
+		/// two used to differ (0 on the host, 32 on the client), which left a ring of
+		/// entities that were reported silent and re-requested but never streamed.
+		/// </summary>
+		public const int ViewMarginCells = 16;
 		private const int MAX_CHUNKS_AXIS = 100;
 		private const int GROUP_BASE = 10000;
 

@@ -45,6 +45,29 @@ namespace ONI_Together.Patches.Duplicant
 
 
 
+		/// <summary>
+		/// The game re-adds a running effect every tick to refresh its timer (one host
+		/// sent 219 ToggleEffectPackets a second for six duplicants). A refresh of an
+		/// effect the clients already have is sent at most every few seconds; a new
+		/// effect always.
+		/// </summary>
+		private static readonly Dictionary<(int, HashedString), float> _lastRefreshSent = new Dictionary<(int, HashedString), float>();
+		private const float RefreshIntervalSeconds = 5f;
+
+		private static bool ShouldSendAdd(Effects effects, Effect effect)
+		{
+			if (effect == null) return false;
+			if (!effects.HasEffect(effect)) return true;
+			var key = (effects.GetInstanceID(), (HashedString)effect.Id);
+			float now = UnityEngine.Time.unscaledTime;
+			if (_lastRefreshSent.TryGetValue(key, out var last) && now - last < RefreshIntervalSeconds)
+				return false;
+			_lastRefreshSent[key] = now;
+			if (_lastRefreshSent.Count > 8192)
+				_lastRefreshSent.Clear();
+			return true;
+		}
+
 		[HarmonyPatch(typeof(Effects), nameof(Effects.Add), [typeof(Effect), typeof(bool), typeof(Func<string, object, string>)])]
 		public class TargetType_TargetMethod_Patch
 		{
@@ -60,7 +83,7 @@ namespace ONI_Together.Patches.Duplicant
 				if (MultiplayerSession.IsClient && !TogglingEffectFromPacket)
 					return false;
 
-				if (MultiplayerSession.IsHost)
+				if (MultiplayerSession.IsHost && ShouldSendAdd(__instance, newEffect))
 					PacketSender.SendToAllClients(new ToggleEffectPacket(__instance, newEffect, should_save));
 
 				return true;
@@ -81,7 +104,8 @@ namespace ONI_Together.Patches.Duplicant
 				if (!__instance.HasTag(GameTags.BaseMinion))
 					return true;
 
-				if (MultiplayerSession.IsHost)
+				// Nothing to remove here means nothing to remove on the clients either.
+				if (MultiplayerSession.IsHost && __instance.HasEffect(effect_id))
 					PacketSender.SendToAllClients(new ToggleEffectPacket(__instance, effect_id));
 
 				return true;

@@ -37,6 +37,8 @@ namespace ONI_Together.Networking.Synchronization
 		public const float DeadBandSeconds = 0.5f;
 		public const float Gain = 0.05f;        // one second of gap -> five percent of speed
 		public const float BiasStep = 0.004f;   // slow integral term: removes the steady gap
+	public const float BiasDecay = 0.002f;  // per tick inside the dead band: the integral must not remember old stalls
+	public const float BiasInputClamp = 2f; // one host stall must not swing the integral on its own
 		public const float MaxDeviation = 0.25f;
 		public const float StaleSeconds = 10f;  // no host time for this long -> plain speed
 		public const float LogInterval = 60f;
@@ -101,8 +103,14 @@ namespace ONI_Together.Networking.Synchronization
 			}
 			else
 			{
+				// A PI controller whose integral had no leak: every host stall (autosave, a
+				// save transfer, a GC spike) stepped the bias down for good, and the
+				// client's whole simulation ran slower and slower over the evening. Inside
+				// the dead band the bias now unwinds, and one excursion is capped.
 				if (Mathf.Abs(diff) > DeadBandSeconds)
-					_bias = Mathf.Clamp(_bias + diff * BiasStep, -MaxDeviation, MaxDeviation);
+					_bias = Mathf.Clamp(_bias + Mathf.Clamp(diff, -BiasInputClamp, BiasInputClamp) * BiasStep, -MaxDeviation, MaxDeviation);
+				else
+					_bias = Mathf.MoveTowards(_bias, 0f, BiasDecay);
 				_factor = Mathf.Clamp(1f + _bias + diff * Gain, 1f - MaxDeviation, 1f + MaxDeviation);
 			}
 
@@ -111,7 +119,7 @@ namespace ONI_Together.Networking.Synchronization
 			if (_lastLogAt < 0f || Time.unscaledTime - _lastLogAt >= LogInterval)
 			{
 				_lastLogAt = Time.unscaledTime;
-				DebugConsole.Log($"[GameClockSync] Gap to host {diff:+0.00;-0.00} s, speed factor {_factor:F3}, snaps {_snapCount}");
+				DebugConsole.Log($"[GameClockSync] Gap to host {diff:+0.00;-0.00} s, speed factor {_factor:F3} (bias {_bias:+0.000;-0.000}), snaps {_snapCount}");
 			}
 		}
 
