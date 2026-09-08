@@ -242,6 +242,8 @@ namespace ONI_Together.Networking.Components
 					SyncGasLiquid();
 				}
 
+				Synchronization.TerrainReconcile.HostTick();
+
 				// Staggered syncs - one per second (each runs every 4s but distributed)
 				// NOTE: Priorities and Disinfect removed - already synced via event-driven patches
 				if (Time.unscaledTime - _lastSyncTime > STAGGERED_SYNC_INTERVAL)
@@ -368,6 +370,10 @@ namespace ONI_Together.Networking.Components
 						//DebugConsole.Log($"[WorldStateSyncer] Adding missing dig at {cell}");
 						// Use DigTool logic without sending a packet back!
 						// We can manually instantiate the DigPlacer.
+						// A dig the host lists on a cell that is not solid here is the one place a
+						// terrain divergence shows; the terrain reconcile repairs the cell itself.
+						if (Grid.IsValidCell(cell) && !Grid.Solid[cell])
+							DebugConsole.LogAggregated("WorldStateSyncer.DigNotSolid", $"[WorldStateSyncer] the host digs cell {cell} but it is not solid here; terrain differs");
 						if (Grid.IsValidCell(cell) && Grid.Solid[cell])
 						{
 							// DigTool.PlaceDig might trigger patches.

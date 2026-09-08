@@ -189,6 +189,59 @@ namespace ONI_Together.DebugTools
 					Grid.CellToXY(cell, out int x, out int y);
 					return $"cell {cell} = {x},{y}";
 				}
+				case "find":
+				{
+					string want = a[1];
+					int max = a.Length > 2 ? int.Parse(a[2]) : 300;
+					var list = new List<object>();
+					int total = 0, inStorage = 0, unassigned = 0;
+					foreach (var identity in NetworkIdentityRegistry.AllIdentities)
+					{
+						if (identity == null) continue;
+						GameObject go;
+						string prefab;
+						try { go = identity.gameObject; prefab = go.PrefabID().ToString(); }
+						catch { continue; }
+						if (!string.Equals(prefab, want, StringComparison.OrdinalIgnoreCase)) continue;
+						total++;
+						if (!identity.HostAssigned) unassigned++;
+						var pickupable = go.GetComponent<Pickupable>();
+						string storage = null;
+						if (pickupable != null && pickupable.storage != null)
+						{
+							inStorage++;
+							storage = pickupable.storage.gameObject.PrefabID().ToString() + "@" + Grid.PosToCell(pickupable.storage.gameObject);
+						}
+						if (list.Count >= max) continue;
+						var obj = new Dictionary<string, object> { ["netId"] = identity.NetId, ["cell"] = Grid.PosToCell(go), ["hostAssigned"] = identity.HostAssigned, ["active"] = go.activeInHierarchy };
+						if (storage != null) obj["storage"] = storage;
+						var primary = go.GetComponent<PrimaryElement>();
+						if (primary != null) obj["mass"] = Math.Round(primary.Mass, 2);
+						list.Add(obj);
+					}
+					return WriteJson("find_" + want, new Dictionary<string, object> { ["host"] = MultiplayerSession.IsHost, ["prefab"] = want, ["total"] = total, ["inStorage"] = inStorage, ["local"] = unassigned, ["objects"] = list });
+				}
+				case "verbose":
+					DebugConsole.Verbosity = a.Length > 1 && a[1] == "on" ? LogVerbosity.Verbose : LogVerbosity.Normal;
+					return "verbosity=" + DebugConsole.Verbosity;
+				case "localdig":
+				{
+					int cell = ParseCell(a[1]);
+					bool wasSolid = Grid.Solid[cell];
+					WorldDamage.Instance.DestroyCell(cell);
+					WorldDamage.Instance.OnSolidStateChanged(cell);
+					return $"local dig at {cell} (was solid={wasSolid}); no packet sent";
+				}
+				case "localfill":
+				{
+					int cell = ParseCell(a[1]);
+					var element = ElementLoader.FindElementByName(a[2]);
+					if (element == null) return "unknown element " + a[2];
+					SimMessages.ModifyCell(cell, element.idx, 293.15f, 400f, byte.MaxValue, 0, SimMessages.ReplaceType.Replace);
+					return $"local fill at {cell} with {element.id}; no packet sent";
+				}
+				case "terrain":
+					return ONI_Together.Networking.Synchronization.TerrainReconcile.Status + $"; solid={Grid.Solid[ParseCell(a.Length > 1 ? a[1] : "0")]}";
 				case "census":
 				{
 					var byPrefab = new SortedDictionary<string, int[]>();
