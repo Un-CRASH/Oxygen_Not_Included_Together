@@ -33,12 +33,15 @@ namespace ONI_Together.Networking.Synchronization
 	public static class GameClockSync
 	{
 		public const float SendInterval = 1f;
-		public const float SnapSeconds = 20f;
+		public const float SnapSeconds = 6f;     // a gap this large is a step (an autosave, a reload), not drift: set the clock, do not chase it
 		public const float DeadBandSeconds = 0.5f;
 		public const float Gain = 0.05f;        // one second of gap -> five percent of speed
 		public const float BiasStep = 0.004f;   // slow integral term: removes the steady gap
-	public const float BiasDecay = 0.002f;  // per tick inside the dead band: the integral must not remember old stalls
-	public const float BiasInputClamp = 2f; // one host stall must not swing the integral on its own
+		public const float BiasLeakPerTick = 0.999f;   // ~17 min time constant: a one-off stall is forgotten, a real rate offset is kept
+		public const float BiasInputClamp = 2f;        // one host stall must not swing the integral on its own
+		public const float PhaseStepSeconds = 5f;      // a jump this size is a phase step; the integral is held after one
+		public const float IntegratorHoldSeconds = 10f;
+		public const float MaxFactorSlewPerTick = 0.05f; // one tick may not slam the client's speed from 1.0 to 0.75
 		public const float MaxDeviation = 0.25f;
 		public const float StaleSeconds = 10f;  // no host time for this long -> plain speed
 		public const float LogInterval = 60f;
@@ -48,6 +51,7 @@ namespace ONI_Together.Networking.Synchronization
 		private static float _lastLogAt = -1f;
 		private static float _factor = 1f;
 		private static float _bias;
+		private static float _holdIntegratorUntil;
 		private static int _snapCount;
 
 		/// <summary>Current multiplier on the client's game speed (1 = host and client agree).</summary>
@@ -100,18 +104,27 @@ namespace ONI_Together.Networking.Synchronization
 				Snap(clock, cycle, cycleTime, diff);
 				_bias = 0f;
 				_factor = 1f;
+				_holdIntegratorUntil = Time.unscaledTime + IntegratorHoldSeconds;
 			}
 			else
 			{
-				// A PI controller whose integral had no leak: every host stall (autosave, a
-				// save transfer, a GC spike) stepped the bias down for good, and the
-				// client's whole simulation ran slower and slower over the evening. Inside
-				// the dead band the bias now unwinds, and one excursion is capped.
-				if (Mathf.Abs(diff) > DeadBandSeconds)
+				// A PI loop. The proportional term follows the gap; the integral cancels a
+				// real rate difference (a loaded host runs 6-8 % slower than a light
+				// client - the steady 0.92-0.96 factor in the logs is that correction,
+				// not a defect). The integral leaks a little every tick, so a one-off
+				// stall is forgotten while a steady offset is kept; a fixed unwind inside
+				// the dead band erased the offset in half a minute and left a persistent
+				// gap. A phase step (a host autosave, our own reload) is not a rate
+				// error, so the integral is held for a while after one, and the factor
+				// may only slew so fast.
+				if (Mathf.Abs(diff) > PhaseStepSeconds)
+					_holdIntegratorUntil = Time.unscaledTime + IntegratorHoldSeconds;
+				bool holdIntegrator = Time.unscaledTime < _holdIntegratorUntil;
+				if (!holdIntegrator && Mathf.Abs(diff) > DeadBandSeconds)
 					_bias = Mathf.Clamp(_bias + Mathf.Clamp(diff, -BiasInputClamp, BiasInputClamp) * BiasStep, -MaxDeviation, MaxDeviation);
-				else
-					_bias = Mathf.MoveTowards(_bias, 0f, BiasDecay);
-				_factor = Mathf.Clamp(1f + _bias + diff * Gain, 1f - MaxDeviation, 1f + MaxDeviation);
+				_bias *= BiasLeakPerTick;
+				float target = Mathf.Clamp(1f + _bias + diff * Gain, 1f - MaxDeviation, 1f + MaxDeviation);
+				_factor = Mathf.MoveTowards(_factor, target, MaxFactorSlewPerTick);
 			}
 
 			ApplySpeedFactor();
@@ -187,6 +200,7 @@ namespace ONI_Together.Networking.Synchronization
 			bool wasScaled = _factor != 1f;
 			_factor = 1f;
 			_bias = 0f;
+			_holdIntegratorUntil = 0f;
 			_lastSendAt = -1f;
 			_lastHostTimeAt = -1f;
 			_lastLogAt = -1f;
