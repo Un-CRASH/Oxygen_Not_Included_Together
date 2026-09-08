@@ -234,6 +234,12 @@ namespace ONI_Together.Networking.OxySync.Components
 
                 ulong manualDirty = behaviour.GetAndClearDirtyBits();
 
+                // Re-home the behaviour in the chunk it is in now, whether or not any
+                // SyncVar changed: a behaviour without SyncVars (AnimSyncer on every
+                // duplicant) never reached the re-index below, so its RPCs stayed
+                // addressed to the chunk it spawned in for the whole session.
+                ReindexInterestGroup(behaviour);
+
                 _changedByGroup.Clear();
                 CollectChanges(behaviour, manualDirty, _changedByGroup);
 
@@ -242,6 +248,17 @@ namespace ONI_Together.Networking.OxySync.Components
                 var identity = behaviour.GetComponent<NetworkIdentity>();
                 if (identity == null || identity.NetId == 0)
                     continue;
+
+                // A client whose reliable channel is far behind gets no more deltas piled
+                // on top; the values stay unsent (dirty) and go out on a later tick. One
+                // session's queue to a client grew to 22 000 packets while this loop kept
+                // adding SyncVar deltas at 300-460 a second.
+                if (AnyTargetBacklogged(_changedByGroup.Keys))
+                {
+                    behaviour.MarkAllDirty();
+                    ONI_Together.Networking.Transport.NetStats.RecordBacklogSkip();
+                    continue;
+                }
 
                 int netId = identity.NetId;
                 int behaviourId = behaviour.BehaviourId;
@@ -291,22 +308,6 @@ namespace ONI_Together.Networking.OxySync.Components
                     behaviour._lastActiveSyncTime = Time.unscaledTime;
 
                 behaviour.SyncLastSentValues();
-
-				if (!_explicitGroupTypes.Contains(behaviour.GetType()))
-				{
-					int currentWorld = behaviour.GetMyWorldId();
-					if (currentWorld >= 0)
-					{
-						int newGroup = WorldChunkHelper.GetGroupId(currentWorld, Grid.PosToCell(behaviour.transform.position));
-						if (newGroup != behaviour.InterestGroup)
-                        {
-                            RemoveBehaviourFromGroupIndex(behaviour, behaviour.InterestGroup);
-                            behaviour.InterestGroup = newGroup;
-                            AddBehaviourToGroupIndex(behaviour, newGroup);
-                            behaviour.MarkAllDirty(); // Looking at this I'm not 100% sure I need this anymore but I'll leave it - Lyraedan
-                        }
-					}
-				}
             }
 
             if (totalChanges > 0)
@@ -314,6 +315,38 @@ namespace ONI_Together.Networking.OxySync.Components
                 sw.Stop();
                 SyncStats.RecordSync(SyncStats.OxySync, totalChanges, totalChanges * 16, sw.ElapsedMilliseconds);
             }
+        }
+
+        private static bool AnyTargetBacklogged(IEnumerable<(int Group, PacketSendMode Mode)> keys)
+        {
+            var sender = NetworkConfig.TransportPacketSender;
+            foreach (var key in keys)
+            {
+                foreach (var playerId in InterestGroupManager.GetGroupMemberIds(key.Group))
+                {
+                    if (playerId == MultiplayerSession.HostUserID) continue;
+                    if (!MultiplayerSession.ConnectedPlayers.TryGetValue(playerId, out var player) || player.Connection == null) continue;
+                    if (sender.IsBacklogged(player.Connection))
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        private void ReindexInterestGroup(NetworkBehaviour behaviour)
+        {
+            if (_explicitGroupTypes.Contains(behaviour.GetType()))
+                return;
+            int currentWorld = behaviour.GetMyWorldId();
+            if (currentWorld < 0)
+                return;
+            int newGroup = WorldChunkHelper.GetGroupId(currentWorld, Grid.PosToCell(behaviour.transform.position));
+            if (newGroup == behaviour.InterestGroup)
+                return;
+            RemoveBehaviourFromGroupIndex(behaviour, behaviour.InterestGroup);
+            behaviour.InterestGroup = newGroup;
+            AddBehaviourToGroupIndex(behaviour, newGroup);
+            behaviour.MarkAllDirty(); // the new group gets a full state
         }
 
         internal static void CollectChanges(NetworkBehaviour behaviour, ulong manualDirty, Dictionary<(int Group, PacketSendMode Mode), List<(int Hash, Variant Value)>> changes)

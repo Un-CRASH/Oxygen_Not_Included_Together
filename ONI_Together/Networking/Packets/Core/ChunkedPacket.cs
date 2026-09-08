@@ -85,11 +85,12 @@ namespace ONI_Together.Networking.Packets.Core
 			var key = (source, SequenceId);
 			if (!Pending.TryGetValue(key, out var transfer))
 			{
+				// A full table used to drop the arriving transfer and keep the stale ones,
+				// so once it filled with abandoned transfers every new payload was lost
+				// until they aged out. The oldest incomplete transfer is the one least
+				// likely to ever complete; it makes room for the new one.
 				if (Pending.Count >= MaxPendingTransfers)
-				{
-					DebugConsole.LogAggregated("ChunkedPacket.TransferLimit", "[ChunkedPacket] Too many incomplete transfers; fragment dropped.");
-					return;
-				}
+					EvictOldest();
 				transfer = new PendingTransfer { Chunks = new byte[TotalChunks][], LastReceived = now };
 				Pending.Add(key, transfer);
 			}
@@ -131,6 +132,26 @@ namespace ONI_Together.Networking.Packets.Core
 		{
 			Pending.Remove(key);
 			_pendingBytes -= transfer.ByteCount;
+		}
+
+		private static void EvictOldest()
+		{
+			float oldest = float.MaxValue;
+			(object Source, int SequenceId) victim = default;
+			PendingTransfer victimTransfer = null;
+			foreach (var entry in Pending)
+			{
+				if (entry.Value.LastReceived < oldest)
+				{
+					oldest = entry.Value.LastReceived;
+					victim = entry.Key;
+					victimTransfer = entry.Value;
+				}
+			}
+			if (victimTransfer == null)
+				return;
+			Remove(victim, victimTransfer);
+			DebugConsole.LogAggregated("ChunkedPacket.TransferLimit", $"[ChunkedPacket] Reassembly table full; evicted the oldest incomplete transfer ({victimTransfer.ReceivedCount}/{victimTransfer.Chunks.Length} fragments).");
 		}
 
 		private static void PruneExpired(float now)

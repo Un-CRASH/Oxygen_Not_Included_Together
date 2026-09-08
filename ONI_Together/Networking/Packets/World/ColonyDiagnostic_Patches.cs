@@ -13,6 +13,7 @@ namespace ONI_Together.Networking.Packets.World
 	internal class ColonyDiagnostic_Patches
 	{
 		static Dictionary<string, DiagnosticResult> CachedResults = [];
+		static readonly Dictionary<string, DiagnosticResult> LastSent = [];
 		internal static void OnPacketReceived(DiagnosticPacket diagnosticPacket)
 		{
 			using var _ = Profiler.Scope();
@@ -42,8 +43,13 @@ namespace ONI_Together.Networking.Packets.World
 
 				if (MultiplayerSession.IsHostInSession)
 				{
+					// The game re-evaluates every diagnostic several times a second (67
+					// packets/s in one session); the clients only need a result that changed.
 					var typeName = __instance.GetType().Name;
-					PacketSender.SendToAllClients(new DiagnosticPacket(typeName, __result));
+					if (LastSent.TryGetValue(typeName, out var last) && last.opinion == __result.opinion && last.message == __result.message)
+						return;
+					LastSent[typeName] = __result;
+					PacketSender.SendToAllClientsUnlessBacklogged(new DiagnosticPacket(typeName, __result));
 				}
 			}
 		}

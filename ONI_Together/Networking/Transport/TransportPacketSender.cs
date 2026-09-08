@@ -232,6 +232,12 @@ namespace ONI_Together.Networking.Transport
 
         public abstract bool SendPacket(object conn, IPacket packet, PacketSendMode sendType = PacketSendMode.ReliableImmediate);
 
+        /// <summary>True while this connection's reliable channel is far behind (see IsBacklogged overrides).</summary>
+        public virtual bool IsBacklogged(object conn) => false;
+
+        /// <summary>Reliable packets ride the per-frame CoalescedPacket on this transport, in send order.</summary>
+        public bool CoalescesReliable => SupportsCoalescing && Configuration.Instance.CoalesceReliablePackets;
+
         private const int MAX_PAYLOAD_BYTES = 1000;
 
         /// <summary>
@@ -247,6 +253,15 @@ namespace ONI_Together.Networking.Transport
             int chunkDataSize = MAX_PAYLOAD_BYTES - 20; // overhead for ChunkedPacket header
             int totalChunks = (bytes.Length + chunkDataSize - 1) / chunkDataSize;
             int sequenceId = ChunkedPacket.GetNextSequenceId();
+
+            // A fragmented payload has no unreliable form: one lost fragment loses the
+            // whole transfer and parks it in the receiver's reassembly table until it
+            // expires. Every fragment goes reliable, whatever the payload asked for.
+            if ((sendType & PacketSendMode.Reliable) == 0)
+            {
+                NetStats.RecordForcedReliable(packet, bytes.Length);
+                sendType = (sendType | PacketSendMode.Reliable) & ~PacketSendMode.NoDelay;
+            }
 
             for (int i = 0; i < totalChunks; i++)
             {

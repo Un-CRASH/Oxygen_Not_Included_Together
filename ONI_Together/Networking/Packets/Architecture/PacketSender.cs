@@ -221,7 +221,13 @@ namespace ONI_Together.Networking
 		{
 			using var _ = Profiler.Scope();
 
-			if (packet is IBulkablePacket bp)
+			// Per-type bulking kept its own list and clock for every packet type, so two
+			// packets one game action produced in the same frame could leave up to 250 ms
+			// apart and in either order (a cancel drag 100 ms behind the dig it undid, a
+			// storage change after the pickup that followed it). A transport that packs
+			// the frame's reliable packets into one CoalescedPacket already gets the
+			// bandwidth win, in send order, so bulking is only used where it does not.
+			if (packet is IBulkablePacket bp && !NetworkConfig.TransportPacketSender.CoalescesReliable)
 			{
 				AppendPendingBulkPacket(conn, packet, bp);
 				return true;

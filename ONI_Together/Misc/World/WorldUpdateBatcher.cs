@@ -12,7 +12,9 @@ namespace ONI_Together.Misc.World
 	{
 		private static readonly List<WorldUpdatePacket.CellUpdate> pendingUpdates = new List<WorldUpdatePacket.CellUpdate>();
 		private static float flushTimer = 0f;
-		private const float FlushInterval = 10f; // Seconds
+		// Cell changes are the dig and tile results the clients wait for; ten seconds of
+		// batching was visible as tiles lagging behind the duplicants.
+		private const float FlushInterval = 2f; // Seconds
 
 		public static void Queue(WorldUpdatePacket.CellUpdate update)
 		{
@@ -56,17 +58,14 @@ namespace ONI_Together.Misc.World
                 return 0;
             }
 
-            bool isLan = NetworkConfig.IsLanConfig();
-            bool isSteam = NetworkConfig.IsSteamConfig();
-
-            // Max packet sizes (bytes)
-            float maxPacketSize =
-                isLan ? PacketSender.MAX_PACKET_SIZE_LAN * 1024 :
-                isSteam ? PacketSender.MAX_PACKET_SIZE_UNRELIABLE :
-                1024; // fallback
-
-            const int PacketHeaderSize = 4;
-            const float BytesPerUpdate = 5.38f; // Measured compressed size, this is a rough estimate
+            // One packet must stay under the transport's single-datagram limit (1000 B):
+            // above it the payload is fragmented, and a fragmented cell batch either
+            // costs several reliable packets or, before the fragment fix, was lost
+            // whole. Deflate on a cell run measures 12.6-14.4 B per update; the old
+            // estimate of 5.38 B filled every batch to ~1.3 KB.
+            const float maxPacketSize = 900f;
+            const int PacketHeaderSize = 12;
+            const float BytesPerUpdate = 16f;
 
             lock (pendingUpdates)
             {
@@ -90,7 +89,7 @@ namespace ONI_Together.Misc.World
                             var packet = new WorldUpdatePacket();
                             packet.Updates.AddRange(currentBatch);
 
-                            PacketSender.SendToAllClients(packet, sendType: PacketSendMode.Unreliable);
+                            Send(packet);
 
                             currentBatch.Clear();
                             currentSize = PacketHeaderSize;
@@ -107,13 +106,24 @@ namespace ONI_Together.Misc.World
                     var packet = new WorldUpdatePacket();
                     packet.Updates.AddRange(currentBatch);
 
-                    PacketSender.SendToAllClients(packet, sendType: PacketSendMode.Unreliable);
+                    Send(packet);
                 }
 
                 pendingUpdates.Clear();
 
                 return (int)(totalUpdates * BytesPerUpdate);
             }
+        }
+
+        /// <summary>
+        /// Reliable: a cell update is the result of a dig or a build and is sent once. The
+        /// sender marks the cell as reported when it queues it (WorldStateSyncer's shadow
+        /// grids), so a lost unreliable batch left the client's tile wrong until the next
+        /// hard sync. The coalescer packs these with the rest of the world stream.
+        /// </summary>
+        private static void Send(WorldUpdatePacket packet)
+        {
+            PacketSender.SendToAllClients(packet, sendType: PacketSendMode.Reliable);
         }
 
     }

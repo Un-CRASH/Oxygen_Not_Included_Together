@@ -19,14 +19,43 @@ namespace ONI_Together.Networking.Transport.Lan
                 return false;
 
             byte[] bytes = PacketSender.SerializePacketForSending(packet);
+            NetStats.RecordBytes(packet, bytes.Length);
 
-            // A large priority packet (a save chunk) is split into ChunkedPackets below, which
-            // do not carry the marker interface; the flag on the send mode does.
             if (packet is IPriorityPacket)
                 sendType |= PacketSendMode.Priority;
 
-            return SendChunkedIfNeeded(peer, bytes, packet, sendType, SendRaw);
+            // LiteNetLib fragments reliable payloads itself and retransmits every fragment,
+            // so nothing is split into ChunkedPackets here any more. The mod's own
+            // fragments were sent with the payload's send mode, unreliable ones included:
+            // one lost fragment left the transfer parked in the receiver's 64-slot
+            // reassembly table for 120 s, and once that table was full every chunked
+            // packet - reliable batches and save chunks too - was dropped for minutes.
+            // A payload too large for one unreliable datagram cannot be delivered
+            // unreliably at all, so it goes reliable instead.
+            if (bytes.Length > MaxUnreliablePayloadBytes && (sendType & PacketSendMode.Reliable) == 0)
+            {
+                NetStats.RecordForcedReliable(packet, bytes.Length);
+                sendType = (sendType | PacketSendMode.Reliable) & ~PacketSendMode.NoDelay;
+            }
+
+            return SendRaw(peer, bytes, packet, sendType);
         }
+
+        /// <summary>
+        /// Unreliable datagrams must fit the negotiated MTU (1024 here, minus headers);
+        /// LiteNetLib throws for larger ones instead of fragmenting.
+        /// </summary>
+        private const int MaxUnreliablePayloadBytes = 1000;
+
+        /// <summary>
+        /// The reliable-ordered channel keeps 64 packets in flight; above this depth the
+        /// periodic broadcasters skip a tick rather than pile more behind the backlog.
+        /// </summary>
+        private const int BacklogThreshold = 200;
+
+        public override bool IsBacklogged(object connection) =>
+            connection is NetPeer peer && peer.ConnectionState == ConnectionState.Connected
+            && peer.GetPacketsCountInReliableQueue(DefaultChannel, false) > BacklogThreshold;
 
         private bool SendRaw(object conn, byte[] bytes, IPacket packet, PacketSendMode sendType)
         {
@@ -38,6 +67,15 @@ namespace ONI_Together.Networking.Transport.Lan
 
             DeliveryMethod deliveryMethod = ConvertSendType(sendType, packet);
             byte channel = IsPriority(sendType, packet) ? PriorityChannel : DefaultChannel;
+
+            // Test rig only (ONI_TOGETHER_TEST_LOSS): drop a share of unreliable datagrams
+            // before they leave, to see what a lossy link does to the world state.
+            if (deliveryMethod == DeliveryMethod.Unreliable && DebugTools.TestHarness.DropUnreliableChance > 0f
+                && UnityEngine.Random.value < DebugTools.TestHarness.DropUnreliableChance)
+            {
+                DebugTools.TestHarness.CountDroppedUnreliable();
+                return true;
+            }
 
             try
             {
@@ -86,11 +124,11 @@ namespace ONI_Together.Networking.Transport.Lan
 
         private static DeliveryMethod ConvertSendType(PacketSendMode sendType, IPacket packet)
         {
-            if (packet is ILatencySensitivePacket || (sendType & PacketSendMode.NoDelay) != 0)
-                return DeliveryMethod.Unreliable;
-
             if ((sendType & PacketSendMode.Reliable) != 0)
                 return DeliveryMethod.ReliableOrdered;
+
+            if (packet is ILatencySensitivePacket || (sendType & PacketSendMode.NoDelay) != 0)
+                return DeliveryMethod.Unreliable;
 
             return DeliveryMethod.Unreliable;
         }

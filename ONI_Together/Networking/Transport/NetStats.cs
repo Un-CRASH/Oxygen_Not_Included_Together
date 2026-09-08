@@ -67,6 +67,35 @@ namespace ONI_Together.Networking.Transport
             _direct++;
         }
 
+        /// <summary>Bytes of a packet that was serialized after RecordOutgoing counted it without a size.</summary>
+        public static void RecordBytes(IPacket packet, int bytes)
+        {
+            string name = packet.GetType().Name;
+            if (!_outByType.TryGetValue(name, out var counter))
+                _outByType[name] = counter = new Counter();
+            counter.Bytes += bytes;
+        }
+
+        private static readonly Dictionary<string, Counter> _forcedReliable = new Dictionary<string, Counter>();
+
+        /// <summary>An unreliable payload too large for one datagram went reliable instead.</summary>
+        public static void RecordForcedReliable(IPacket packet, int bytes)
+        {
+            string name = packet.GetType().Name;
+            if (!_forcedReliable.TryGetValue(name, out var counter))
+                _forcedReliable[name] = counter = new Counter();
+            counter.Count++;
+            if (bytes > counter.Bytes) counter.Bytes = bytes;
+        }
+
+        private static int _backlogSkips;
+
+        /// <summary>A periodic broadcast skipped one connection whose reliable channel was backlogged.</summary>
+        public static void RecordBacklogSkip()
+        {
+            _backlogSkips++;
+        }
+
         /// <summary>Forget the window; the session is over.</summary>
         public static void Reset()
         {
@@ -77,6 +106,8 @@ namespace ONI_Together.Networking.Transport
             _batchedPackets = 0;
             _batchedBytes = 0;
             _direct = 0;
+            _forcedReliable.Clear();
+            _backlogSkips = 0;
             _windowStart = -1f;
         }
 
@@ -130,6 +161,23 @@ namespace ONI_Together.Networking.Transport
             }
             if (syncList.Count == 0) sb.Append("none");
             _syncFields.Clear();
+            if (_forcedReliable.Count > 0)
+            {
+                sb.Append("; oversize unreliable sent reliable: ");
+                bool first = true;
+                foreach (var kvp in _forcedReliable)
+                {
+                    if (!first) sb.Append(", ");
+                    first = false;
+                    sb.Append(kvp.Key).Append(' ').Append(kvp.Value.Count).Append(" (max ").Append(kvp.Value.Bytes).Append(" B)");
+                }
+                _forcedReliable.Clear();
+            }
+            if (_backlogSkips > 0)
+            {
+                sb.Append("; periodic broadcasts skipped for backlog: ").Append(_backlogSkips);
+                _backlogSkips = 0;
+            }
             _windowStart = now;
             return sb.ToString();
         }

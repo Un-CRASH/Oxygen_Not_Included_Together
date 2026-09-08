@@ -34,9 +34,10 @@ namespace ONI_Together.Networking.Components
 		private const float SYNC_INTERVAL = 1.5f;        // delta cadence — matches WorldStateSyncer.GAS_SYNC_INTERVAL
 		private const float FORCE_REFRESH_INTERVAL = 4.5f; // full re-emit cadence; 3x delta is the smallest spacing that does not duplicate the delta tick
 		private const float INITIAL_DELAY = 5f;
-		// 31 bytes/update including visual flow direction/element/mass. 35 updates
-		// remain below Steam P2P's ~1200 byte unreliable MTU.
-		private const int MAX_UPDATES_PER_PACKET = 35;
+		// 31 bytes/update including visual flow direction/element/mass. 30 updates
+		// (938 B with headers) stay below the 1000 B single-datagram limit of the LAN
+		// transport; 35 made every full packet 1093 B, i.e. two unreliable fragments.
+		private const int MAX_UPDATES_PER_PACKET = 30;
 		private const float MASS_THRESHOLD = 0.01f;      // 10 g
 		private const float TEMP_THRESHOLD = 0.5f;       // 0.5 K
 
@@ -209,7 +210,7 @@ namespace ONI_Together.Networking.Components
 
 				if (packet.Updates.Count >= MAX_UPDATES_PER_PACKET)
 				{
-					PacketSender.SendToAllClients(packet, PacketSendMode.Unreliable);
+					PacketSender.SendToAllClientsUnlessBacklogged(packet, PacketSendMode.Unreliable);
 					totalSent += packet.Updates.Count;
 					packet = new ConduitContentsPacket();
 				}
@@ -217,7 +218,7 @@ namespace ONI_Together.Networking.Components
 
 			if (packet.Updates.Count > 0)
 			{
-				PacketSender.SendToAllClients(packet, PacketSendMode.Unreliable);
+				PacketSender.SendToAllClientsUnlessBacklogged(packet, PacketSendMode.Unreliable);
 				totalSent += packet.Updates.Count;
 			}
 

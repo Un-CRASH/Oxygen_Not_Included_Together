@@ -1,5 +1,6 @@
 using HarmonyLib;
 using ONI_Together.DebugTools;
+using ONI_Together.Networking.Packets.Architecture;
 using ONI_Together.Networking.Packets.Chores;
 using Shared.Profiling;
 using System;
@@ -88,7 +89,9 @@ namespace ONI_Together.Networking.Components
 			AppendEntriesMerged(packet, _scratchSnapshot.succeededContexts, ref lastContext, ref hasLastContext, ref listIndex);
 			AppendEntriesMerged(packet, _scratchSnapshot.failedContexts, ref lastContext, ref hasLastContext, ref listIndex);
 
-			PacketSender.SendToAllClients(packet, PacketSendMode.Unreliable);
+			// One datagram per snapshot: the label strings made long errand lists 1-3 KB.
+			PacketSizeGuard.TrimToBudget(packet, packet.Entries);
+			PacketSender.SendToAllClientsUnlessBacklogged(packet, PacketSendMode.Unreliable);
 		}
 
 		private void AppendCurrentChore(ChoreErrandsPacket packet, ref int listIndex)

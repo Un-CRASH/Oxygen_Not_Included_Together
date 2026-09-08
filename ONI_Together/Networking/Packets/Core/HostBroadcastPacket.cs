@@ -64,9 +64,18 @@ namespace ONI_Together.Networking.Packets.Core
 			//this packet should only be sent by clients to the host
 			if (MultiplayerSession.IsHost)
 			{
-				//trigger it on the host
-				innerPacket.OnDispatched();
-				//send it to all other clients except the sender
+				// Apply on the host, then relay. The relay is what the other clients need
+				// whether or not the host's own application threw (a missing target, a
+				// side-screen patch failing), so a failure here must not cancel it.
+				try
+				{
+					innerPacket.OnDispatched();
+				}
+				catch (System.Exception ex)
+				{
+					DebugConsole.LogAggregated("HostBroadcast.Apply." + innerPacket.GetType().Name,
+						$"[HostBroadcastPacket] {innerPacket.GetType().Name} from {SenderId} failed on the host, relaying anyway: {ex.GetType().Name}: {ex.Message}");
+				}
 				PacketSender.SendToAllExcluding(innerPacket, [MultiplayerSession.HostUserID, SenderId]);
 			}
 		}

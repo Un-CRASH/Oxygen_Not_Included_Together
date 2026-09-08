@@ -1,4 +1,5 @@
 using ONI_Together.DebugTools;
+using ONI_Together.Networking.Packets.Architecture;
 using ONI_Together.Networking.Packets.World;
 using Shared.Profiling;
 using System;
@@ -81,11 +82,23 @@ namespace ONI_Together.Networking.Components
                     ItemId = entry.item?.Id ?? string.Empty,
                     CategoryId = entry.category?.Id,
                     DisplayName = entry.GetName(),
-                    Tooltip = entry.item?.GetTooltip(entry.data) ?? string.Empty,
+                    Tooltip = Truncate(entry.item?.GetTooltip(entry.data), MaxTooltipChars),
                 });
             }
 
-            PacketSender.SendToAllClients(packet, PacketSendMode.Unreliable);
+            // Unreliable payloads must fit one datagram; with the localized tooltips a
+            // duplicant's list ran to 1-3 KB and was fragmented (and, before the fragment
+            // fix, lost). Trailing entries are the least visible ones in the panel.
+            PacketSizeGuard.TrimToBudget(packet, packet.Entries);
+            PacketSender.SendToAllClientsUnlessBacklogged(packet, PacketSendMode.Unreliable);
+        }
+
+        private const int MaxTooltipChars = 200;
+
+        private static string Truncate(string text, int max)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+            return text.Length <= max ? text : text.Substring(0, max);
         }
     }
 }
