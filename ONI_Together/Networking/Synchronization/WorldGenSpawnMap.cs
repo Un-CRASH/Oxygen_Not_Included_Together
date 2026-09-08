@@ -33,6 +33,9 @@ namespace ONI_Together.Networking.Synchronization
 
 		public static bool IsPending(int netId) => netId != 0 && _keyByHostId.ContainsKey(netId);
 
+		/// <summary>Client: this object is our own WorldGenSpawner copy, still waiting for the host's id.</summary>
+		public static bool IsLocalPending(GameObject go) => go != null && _localByKey.ContainsValue(go);
+
 		/// <summary>Client: the host told us which id its copy of (prefab, cell) has.</summary>
 		public static void OnHostMapping(int netId, string prefab, int cell)
 		{

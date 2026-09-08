@@ -96,6 +96,28 @@ namespace ONI_Together.Scripts.Creatures
 
 			var statusReceiver = go.AddOrGet<ClientReceiver_StatusItems>();
 			statusReceiver.recieverType = ClientReceiver_StatusItems.StatusRecieverType.CREATURE;
+
+			// A creature this side created on its own - a hive's larva, a hatched egg, a
+			// morph - is a copy of one the host creates and announces under its own id.
+			// Kept, it was a second critter nobody could address: 60 extra bee larvae on
+			// one client after 4.5 h. Anything the host announces, the world loads, or
+			// the client's own WorldGenSpawner makes (paired through WorldGenSpawnMap)
+			// has or is about to get a host id; the check waits a frame so the override
+			// from the packet lands first.
+			bool worldGen = ONI_Together.Networking.Synchronization.WorldGenSpawnMap.InWorldGenSpawn;
+			bool fromPacket = ONI_Together.Networking.Packets.World.SpawnPrefabPacket.ProcessingIncoming
+				|| ONI_Together.Networking.Packets.Tools.Sandbox.SandboxToolPacket.ProcessingIncoming;
+			bool loading = Game.Instance == null || !Game.Instance.isSpawned || ONI_Together.Networking.GameClient.IsHardSyncInProgress;
+			if (worldGen || fromPacket || loading || go.GetComponent<RoverModifiers>() != null)
+				return;
+			GameScheduler.Instance.ScheduleNextFrame("ONI_Together.LocalCreature", _ =>
+			{
+				if (go.IsNullOrDestroyed()) return;
+				var netIdentity = go.GetComponent<NetworkIdentity>();
+				if (netIdentity != null && netIdentity.HostAssigned) return;
+				ONI_Together.DebugTools.DebugConsole.LogAggregated("Creature.LocalSpawnDiscarded", $"[CreatureMultiplayerInitializer] {go.name} was created here rather than announced by the host; discarded");
+				Util.KDestroyGameObject(go);
+			});
 		}
 	}
 }

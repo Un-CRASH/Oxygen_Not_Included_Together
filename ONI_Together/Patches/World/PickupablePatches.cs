@@ -19,6 +19,49 @@ namespace ONI_Together.Patches.World
 		/// </summary>
 		internal static int SuppressAnnounce;
 
+		/// <summary>
+		/// Client: a loose item that this side's own simulation created is removed after
+		/// this long unless the host has claimed it by then.
+		///
+		/// Every loose item a client should have comes from the host (spawn packets,
+		/// container drops, the save). What the client's own simulation makes on top is
+		/// a copy of something the host announces itself, or a phantom: on the rig the
+		/// client's sim kept dripping 10-40 g bottles of ethanol at one cell; the host
+		/// merged its own into one pile, the client cannot merge and kept every drip.
+		/// After 40 minutes it held 107 bottles of ethanol against the host's 20, and
+		/// after 4.5 h 674 locally-made ids against the host's 305 (192 bottles of
+		/// ethanol, 31 berries, 18 logs, 21 bottles of water, 13 fruit cakes) - every one
+		/// a ghost the host could not address. The grace covers the cases where the host
+		/// does claim a local object: its announcement (OverrideNetId marks the identity
+		/// HostAssigned) and the WorldGenSpawner pairing.
+		/// </summary>
+		internal const float LocalItemGraceSeconds = 5f;
+		internal static int LocalItemsRemoved;
+
+		private static void ScheduleLocalItemCheck(Pickupable pickupable)
+		{
+			if (GameScheduler.Instance == null)
+				return;
+			GameScheduler.Instance.Schedule("ONI_Together.LocalItem", LocalItemGraceSeconds, _ =>
+			{
+				if (!MultiplayerSession.IsClient || !MultiplayerSession.InActiveSession)
+					return;
+				if (pickupable == null || pickupable.IsNullOrDestroyed() || pickupable.gameObject.IsNullOrDestroyed())
+					return;
+				if (pickupable.storage != null)
+					return; // container contents are rebuilt from the host's blob
+				var identity = pickupable.gameObject.GetExistingNetIdentity();
+				if (identity != null && identity.HostAssigned)
+					return;
+				if (ONI_Together.Networking.Synchronization.WorldGenSpawnMap.IsLocalPending(pickupable.gameObject))
+					return;
+				LocalItemsRemoved++;
+				var primary = pickupable.GetComponent<PrimaryElement>();
+				DebugConsole.LogAggregated("Pickupable.LocalDiscarded", $"[PickupablePatches] {pickupable.name} at cell {Grid.PosToCell(pickupable.gameObject)} ({(primary != null ? primary.Mass : 0f):F2} kg) was created by this client's own simulation, not by the host; removed ({LocalItemsRemoved} so far)");
+				Util.KDestroyGameObject(pickupable.gameObject);
+			});
+		}
+
         /// <summary>
         /// Living things and markers are synced by other means; only loose items go
         /// through the ground-item packets.
@@ -107,6 +150,17 @@ namespace ONI_Together.Patches.World
                 {
                     if (!IsGroundItemCandidate(__instance))
                         return;
+
+                    if (MultiplayerSession.IsClient && MultiplayerSession.InActiveSession
+                        && !SpawnPrefabPacket.ProcessingIncoming && !WorldDamageSpawnResourcePacket.ProcessingIncoming
+                        && !ONI_Together.Networking.Packets.Tools.Sandbox.SandboxToolPacket.ProcessingIncoming
+                        && !ONI_Together.Networking.Synchronization.WorldGenSpawnMap.InWorldGenSpawn
+                        && Game.Instance != null && Game.Instance.isSpawned && !GameClient.IsHardSyncInProgress
+                        && __instance.storage == null)
+                    {
+                        ScheduleLocalItemCheck(__instance);
+                        return;
+                    }
 
                     var identity = __instance.gameObject.GetNetIdentity();
 
