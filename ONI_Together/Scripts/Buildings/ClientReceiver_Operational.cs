@@ -51,10 +51,29 @@ namespace ONI_Together.Scripts.Buildings
 
 		public void ApplyHostState(bool isOperational, bool isFunctional, bool isActive)
 		{
+			bool operationalChanged = !HasHostState || IsOperational != isOperational;
+			bool activeChanged = !HasHostState || IsActive != isActive;
 			IsOperational = isOperational;
 			IsFunctional = isFunctional;
 			IsActive = isActive;
 			HasHostState = true;
+
+			// The getters above answer with the host's flags, but a building's own state
+			// machines (a generator's working loop, a pump, a refinery) move on the
+			// OperationalChanged / ActiveChanged events, which vanilla only raises when
+			// ITS OWN flags flip. On a client those flip on the client's simulation, not
+			// the host's, so a generator the host was running sat in its idle animation
+			// here. Raise them when the host's state actually changes - after spawn only,
+			// because a handler that runs before OnSpawn (SweepBotStation) crashes.
+			if (!isSpawned)
+				return;
+			// The payloads the game's own Operational sends (IL: UpdateOperational boxes the
+			// flag through BoxedBools, SetActive passes the component itself); handlers
+			// such as ElementConverter cast them and threw on a plain boxed bool.
+			if (operationalChanged)
+				Trigger((int)GameHashes.OperationalChanged, BoxedBools.Box(isOperational));
+			if (activeChanged)
+				Trigger((int)GameHashes.ActiveChanged, GetComponent<Operational>());
 		}
 	}
 }

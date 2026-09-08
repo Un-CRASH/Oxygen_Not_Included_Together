@@ -33,7 +33,8 @@ namespace ONI_Together.Networking.Synchronization
 	public static class GameClockSync
 	{
 		public const float SendInterval = 1f;
-		public const float SnapSeconds = 6f;     // a gap this large is a step (an autosave, a reload), not drift: set the clock, do not chase it
+		public const float SnapSeconds = 20f;    // a gap this large is set, not chased, whatever its shape
+		public const float StepSeconds = 6f;     // the gap moved this much between two host ticks: a step (autosave, reload), not drift - snap at once; a slow host moves it 2-4 s a tick
 		public const float DeadBandSeconds = 0.5f;
 		public const float Gain = 0.05f;        // one second of gap -> five percent of speed
 		public const float BiasStep = 0.004f;   // slow integral term: removes the steady gap
@@ -52,6 +53,8 @@ namespace ONI_Together.Networking.Synchronization
 		private static float _factor = 1f;
 		private static float _bias;
 		private static float _holdIntegratorUntil;
+		private static float _lastDiff;
+		private static bool _hasLastDiff;
 		private static int _snapCount;
 
 		/// <summary>Current multiplier on the client's game speed (1 = host and client agree).</summary>
@@ -99,9 +102,18 @@ namespace ONI_Together.Networking.Synchronization
 			float hostTime = cycle * 600f + cycleTime;
 			float diff = hostTime - clock.GetTime(); // > 0: this client is behind the host
 
-			if (Mathf.Abs(diff) > SnapSeconds)
+			// A step - the gap jumped between two consecutive host ticks - is a host
+			// stall or a reload and is set straight away; a ramp of the same size is a
+			// host that runs slowly (an overloaded PC) and is followed by the controller
+			// rather than snapped every few seconds.
+			bool step = _hasLastDiff && Mathf.Abs(diff - _lastDiff) > StepSeconds && Mathf.Abs(diff) > PhaseStepSeconds;
+			_lastDiff = diff;
+			_hasLastDiff = true;
+
+			if (Mathf.Abs(diff) > SnapSeconds || step)
 			{
 				Snap(clock, cycle, cycleTime, diff);
+				_lastDiff = 0f;
 				_bias = 0f;
 				_factor = 1f;
 				_holdIntegratorUntil = Time.unscaledTime + IntegratorHoldSeconds;
@@ -201,6 +213,7 @@ namespace ONI_Together.Networking.Synchronization
 			_factor = 1f;
 			_bias = 0f;
 			_holdIntegratorUntil = 0f;
+			_hasLastDiff = false;
 			_lastSendAt = -1f;
 			_lastHostTimeAt = -1f;
 			_lastLogAt = -1f;

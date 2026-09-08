@@ -79,9 +79,10 @@ namespace ONI_Together.Networking.Synchronization
 
 		private static void Adopt(GameObject go, int netId, string prefab, int cell)
 		{
+			// Unconditional, so the identity is marked host-assigned even when the ids
+			// already agree (see the local-item guard in PickupablePatches).
 			var identity = go.AddOrGet<NetworkIdentity>();
-			if (identity.NetId != netId)
-				identity.OverrideNetId(netId);
+			identity.OverrideNetId(netId);
 			DebugConsole.Log($"[WorldGenSpawn] {prefab} at cell {cell} adopted host NetId {netId}");
 		}
 

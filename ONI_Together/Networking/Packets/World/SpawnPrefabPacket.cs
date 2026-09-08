@@ -233,9 +233,12 @@ public class SpawnPrefabPacket : IPacket
             
             if (go != null)
             {
+                // Unconditional: a substance chunk's locally computed id can EQUAL the host's
+                // (same prefab, cell, mass and temperature hash the same on both sides), and
+                // skipping the override then left the identity marked as this side's own -
+                // the local-item guard removed the host's dug ore and dropped seeds 5 s later.
                 var identity = go.AddOrGet<NetworkIdentity>();
-                if (identity.NetId != NetId)
-                    identity.OverrideNetId(NetId);
+                identity.OverrideNetId(NetId);
 
                 if (go.GetComponent<MinionIdentity>() != null || go.HasTag(GameTags.BaseMinion))
                 {

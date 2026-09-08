@@ -242,6 +242,52 @@ namespace ONI_Together.DebugTools
 				}
 				case "terrain":
 					return ONI_Together.Networking.Synchronization.TerrainReconcile.Status + $"; solid={Grid.Solid[ParseCell(a.Length > 1 ? a[1] : "0")]}";
+				case "food":
+				{
+					var byPrefab = new SortedDictionary<string, double[]>();
+					double total = 0; int count = 0, stored = 0;
+					foreach (var edible in global::Components.Edibles.Items)
+					{
+						if (edible == null || edible.IsNullOrDestroyed()) continue;
+						string prefab = edible.gameObject.PrefabID().ToString();
+						if (!byPrefab.TryGetValue(prefab, out var row)) byPrefab[prefab] = row = new double[2];
+						row[0] += 1; row[1] += edible.Calories;
+						total += edible.Calories; count++;
+						var pickupable = edible.GetComponent<Pickupable>();
+						if (pickupable != null && ONI_Together.Patches.World.PickupablePatches.IsInStorage(pickupable)) stored++;
+					}
+					if (a.Length > 1) WriteJson("food_" + a[1], new Dictionary<string, object> { ["host"] = MultiplayerSession.IsHost, ["kcal"] = Math.Round(total / 1000.0, 1), ["items"] = count, ["stored"] = stored, ["prefabs"] = byPrefab });
+					return $"edibles={count} stored={stored} kcal={total / 1000.0:F1}";
+				}
+				case "anim":
+				{
+					int cell = ParseCell(a[1]);
+					var go = Grid.Objects[cell, (int)ObjectLayer.Building];
+					if (go == null) return "no building at " + cell;
+					var op = go.GetComponent<Operational>();
+					var anim = go.GetComponent<KBatchedAnimController>();
+					var receiver = go.GetComponent<ONI_Together.Scripts.Buildings.ClientReceiver_Operational>();
+					return $"{go.PrefabID()} operational={(op != null ? op.IsOperational.ToString() : "-")} active={(op != null ? op.IsActive.ToString() : "-")} hostState={(receiver != null ? receiver.HasHostState.ToString() : "-")} anim={(anim != null ? anim.currentAnim.ToString() : "-")} playing={(anim != null ? (!anim.IsStopped()).ToString() : "-")}";
+				}
+				case "storage":
+				{
+					int cell = ParseCell(a[1]);
+					var go = Grid.Objects[cell, (int)ObjectLayer.Building];
+					if (go == null) return "no building at " + cell;
+					var st = go.GetComponent<Storage>();
+					if (st == null) return go.PrefabID() + " has no Storage";
+					var sb = new StringBuilder();
+					sb.Append($"{go.PrefabID()} items={st.items.Count} mass={st.MassStored():F2}");
+					foreach (var item in st.items)
+					{
+						if (item == null) { sb.Append(" | <null>"); continue; }
+						var pe = item.GetComponent<PrimaryElement>();
+						var pick = item.GetComponent<Pickupable>();
+						var id = item.GetComponent<ONI_Together.Networking.Components.NetworkIdentity>();
+						sb.Append($" | {item.PrefabID()} {(pe != null ? pe.Mass : 0f):F2}kg id={(id != null ? id.NetId : 0)}{(id != null && id.HostAssigned ? "H" : "L")} st={(pick != null && pick.storage == st ? "y" : "n")}");
+					}
+					return sb.ToString();
+				}
 				case "census":
 				{
 					var byPrefab = new SortedDictionary<string, int[]>();
@@ -294,8 +340,8 @@ namespace ONI_Together.DebugTools
 					App.Quit();
 					return "quitting";
 				case "fps":
-					Application.targetFrameRate = int.Parse(a[1]);
-					return $"targetFrameRate={Application.targetFrameRate}";
+					if (a.Length > 1) Application.targetFrameRate = int.Parse(a[1]);
+					return $"fps={(Time.smoothDeltaTime > 0f ? 1f / Time.smoothDeltaTime : 0f):F1} unscaledDelta={Time.unscaledDeltaTime:F3} timeScale={Time.timeScale:F2} target={Application.targetFrameRate}";
 				case "speed":
 					SpeedControlScreen.Instance.SetSpeed(int.Parse(a[1]));
 					return $"speed={SpeedControlScreen.Instance.GetSpeed()}";

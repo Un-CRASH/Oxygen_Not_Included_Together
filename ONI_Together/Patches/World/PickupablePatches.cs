@@ -48,18 +48,52 @@ namespace ONI_Together.Patches.World
 					return;
 				if (pickupable == null || pickupable.IsNullOrDestroyed() || pickupable.gameObject.IsNullOrDestroyed())
 					return;
-				if (pickupable.storage != null)
+				if (IsInStorage(pickupable))
 					return; // container contents are rebuilt from the host's blob
-				var identity = pickupable.gameObject.GetExistingNetIdentity();
+				var go = pickupable.gameObject;
+				var identity = go.GetExistingNetIdentity();
 				if (identity != null && identity.HostAssigned)
 					return;
-				if (ONI_Together.Networking.Synchronization.WorldGenSpawnMap.IsLocalPending(pickupable.gameObject))
+				if (ONI_Together.Networking.Synchronization.WorldGenSpawnMap.IsLocalPending(go))
+					return;
+				// Only a duplicate of something the host has at this very cell - the client's
+				// own drip next to the host's pile. Anything else this side made on its own
+				// (a chunk that fell, a container's contents) stays: a first version removed
+				// every locally made loose item and took fridge contents and dug ore with it.
+				int cell = Grid.PosToCell(go);
+				if (!Grid.IsValidCell(cell) || !HasHostTwinAtCell(go, cell))
 					return;
 				LocalItemsRemoved++;
 				var primary = pickupable.GetComponent<PrimaryElement>();
-				DebugConsole.LogAggregated("Pickupable.LocalDiscarded", $"[PickupablePatches] {pickupable.name} at cell {Grid.PosToCell(pickupable.gameObject)} ({(primary != null ? primary.Mass : 0f):F2} kg) was created by this client's own simulation, not by the host; removed ({LocalItemsRemoved} so far)");
-				Util.KDestroyGameObject(pickupable.gameObject);
+				DebugConsole.LogAggregated("Pickupable.LocalDiscarded", $"[PickupablePatches] {pickupable.name} at cell {cell} ({(primary != null ? primary.Mass : 0f):F2} kg) was created by this client's own simulation next to the host's copy; removed ({LocalItemsRemoved} so far)");
+				Util.KDestroyGameObject(go);
 			});
+		}
+
+		/// <summary>Stored: the storage field, or the parent (a Store with events blocked leaves the field unset).</summary>
+		internal static bool IsInStorage(Pickupable pickupable)
+		{
+			if (pickupable.storage != null) return true;
+			var parent = pickupable.transform.parent;
+			return parent != null && parent.GetComponent<Storage>() != null;
+		}
+
+		private static bool HasHostTwinAtCell(GameObject go, int cell)
+		{
+			var prefab = go.PrefabID();
+			var head = Grid.Objects[cell, (int)ObjectLayer.Pickupables];
+			var item = head != null ? head.GetComponent<Pickupable>()?.objectLayerListItem : null;
+			int guard = 0;
+			while (item != null && guard++ < 10000)
+			{
+				var other = item.gameObject;
+				item = item.nextItem;
+				if (other == null || other == go) continue;
+				if (other.PrefabID() != prefab) continue;
+				var otherIdentity = other.GetExistingNetIdentity();
+				if (otherIdentity != null && otherIdentity.HostAssigned) return true;
+			}
+			return false;
 		}
 
         /// <summary>
@@ -156,7 +190,7 @@ namespace ONI_Together.Patches.World
                         && !ONI_Together.Networking.Packets.Tools.Sandbox.SandboxToolPacket.ProcessingIncoming
                         && !ONI_Together.Networking.Synchronization.WorldGenSpawnMap.InWorldGenSpawn
                         && Game.Instance != null && Game.Instance.isSpawned && !GameClient.IsHardSyncInProgress
-                        && __instance.storage == null)
+                        && !IsInStorage(__instance))
                     {
                         ScheduleLocalItemCheck(__instance);
                         return;
