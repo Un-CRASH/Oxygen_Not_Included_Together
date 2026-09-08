@@ -350,10 +350,19 @@ namespace ONI_Together.Networking.OxySync.Components
             int newGroup = WorldChunkHelper.GetGroupId(currentWorld, Grid.PosToCell(behaviour.transform.position));
             if (newGroup == behaviour.InterestGroup)
                 return;
-            RemoveBehaviourFromGroupIndex(behaviour, behaviour.InterestGroup);
+            int oldGroup = behaviour.InterestGroup;
+            RemoveBehaviourFromGroupIndex(behaviour, oldGroup);
             behaviour.InterestGroup = newGroup;
             AddBehaviourToGroupIndex(behaviour, newGroup);
             behaviour.MarkAllDirty(); // the new group gets a full state
+            try
+            {
+                behaviour.OnInterestGroupChanged(oldGroup, newGroup);
+            }
+            catch (System.Exception ex)
+            {
+                DebugConsole.LogAggregated("OxySync.GroupChanged", $"[OxySync] {behaviour.GetType().Name}.OnInterestGroupChanged threw: {ex.GetType().Name}: {ex.Message}");
+            }
         }
 
         internal static void CollectChanges(NetworkBehaviour behaviour, ulong manualDirty, Dictionary<(int Group, PacketSendMode Mode), List<(int Hash, Variant Value)>> changes)
@@ -486,24 +495,28 @@ namespace ONI_Together.Networking.OxySync.Components
                     && NetworkConfig.TransportPacketSender.CanSendSnapshot(player.Connection))
                 {
                     var behaviour = pending.Behaviours.Dequeue();
-                    used++;
-                    if (!behaviour.IsNullOrDestroyed())
-                        SendBehaviourSnapshot(key.Player, key.Group, behaviour);
+                    // Only a snapshot that went out costs budget. A behaviour with no SyncVar
+                    // (AnimSyncer on every duplicant and critter, WorkableSyncer, ...) used to
+                    // burn one of the 16 slots per tick sending nothing, so filling a chunk a
+                    // player just looked at took several times longer than it needed to.
+                    if (!behaviour.IsNullOrDestroyed() && SendBehaviourSnapshot(key.Player, key.Group, behaviour))
+                        used++;
                 }
                 _snapshotBudgets[key.Player] = used;
                 if (pending.Behaviours.Count == 0) _pendingSnapshots.Remove(key);
             }
         }
 
-        private static void SendBehaviourSnapshot(ulong playerId, int groupId, NetworkBehaviour behaviour)
+        /// <summary>True when a snapshot was actually sent; a behaviour with nothing to send costs no budget.</summary>
+        private static bool SendBehaviourSnapshot(ulong playerId, int groupId, NetworkBehaviour behaviour)
         {
 
                 int netId = behaviour.NetId;
-                if (netId == 0) return;
+                if (netId == 0) return false;
                 int behaviourId = behaviour.BehaviourId;
 
                 var fields = behaviour.SyncVarFields;
-                if (fields.Count == 0) return;
+                if (fields.Count == 0) return false;
 
                 var updates = new List<(int Hash, Variant Value)>();
                 for (int i = 0; i < fields.Count; i++)
@@ -516,7 +529,7 @@ namespace ONI_Together.Networking.OxySync.Components
                     updates.Add((field.Hash, VariantHelper.ObjectToVariant(field.Info.GetValue(behaviour))));
                 }
 
-                if (updates.Count == 0) return;
+                if (updates.Count == 0) return false;
 
                 ONI_Together.Networking.Transport.NetStats.RecordSyncFields(behaviour.GetType().Name, updates.Count, snapshot: true);
                 long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -540,6 +553,7 @@ namespace ONI_Together.Networking.OxySync.Components
                         Timestamp = timestamp,
                     }, PacketSendMode.ReliableImmediate);
                 }
+                return true;
         }
 
         /// <summary>

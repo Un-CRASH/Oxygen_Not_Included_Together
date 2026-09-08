@@ -51,6 +51,12 @@ namespace Shared.OxySync
         public float _lastActiveSyncTime;
         public int InterestGroup { get; set; } = -1;
 
+        /// <summary>
+        /// Host: this behaviour was re-filed under another interest group (its entity moved
+        /// to another chunk). State that is not a SyncVar can be re-sent to the new group here.
+        /// </summary>
+        public virtual void OnInterestGroupChanged(int oldGroup, int newGroup) { }
+
         private int _behaviourId = -1;
 
         /// <summary>
@@ -116,8 +122,7 @@ namespace Shared.OxySync
         {
             base.OnSpawn();
             BehaviourId = ResolveBehaviourId(GetType());
-            DiscoverSyncVars();
-            DiscoverRpcs();
+            Discover();
             OnSpawned?.Invoke(this);
         }
 
@@ -164,6 +169,28 @@ namespace Shared.OxySync
 
                 type_ = type_.BaseType;
             }
+        }
+
+        private bool _discovered;
+
+        private void Discover()
+        {
+            DiscoverSyncVars();
+            DiscoverRpcs();
+            _discovered = true;
+        }
+
+        /// <summary>
+        /// The SyncVar and RPC tables are built in OnSpawn, which Unity delivers a frame
+        /// after the object is created. A packet for an entity created this very frame
+        /// (a newborn critter's first animation, coalesced with its spawn) arrived before
+        /// that and was dropped - silently for a SyncVar, with a warning for an RPC. The
+        /// tables are built on first use instead; OnSpawn rebuilding them is harmless.
+        /// </summary>
+        private void EnsureDiscovered()
+        {
+            if (!_discovered)
+                Discover();
         }
 
         private void DiscoverSyncVars()
@@ -455,6 +482,7 @@ namespace Shared.OxySync
 
         public virtual void ApplySyncVar(int fieldHash, object value, long timestamp = 0)
         {
+            EnsureDiscovered();
             if (_syncVarFields == null) return;
 
             for (int i = 0; i < _syncVarFields.Count; i++)
@@ -494,6 +522,7 @@ namespace Shared.OxySync
 
         public void InvokeClientRpc(int methodHash, byte[] args)
         {
+            EnsureDiscovered();
             if (_clientRpcMethods == null || !_clientRpcMethods.TryGetValue(methodHash, out var method))
             {
                 // The other table, in case a caller routed the kinds the wrong way round.
@@ -510,6 +539,7 @@ namespace Shared.OxySync
 
         public void InvokeTargetRpc(int methodHash, byte[] args)
         {
+            EnsureDiscovered();
             if (_targetRpcMethods == null || !_targetRpcMethods.TryGetValue(methodHash, out var method))
             {
                 if (_clientRpcMethods != null && _clientRpcMethods.TryGetValue(methodHash, out method))
@@ -609,6 +639,7 @@ namespace Shared.OxySync
 
         public object? GetSyncVarValue(int fieldHash)
         {
+            EnsureDiscovered();
             if (_syncVarFields == null) return null;
             foreach (var field in _syncVarFields)
             {
@@ -620,6 +651,7 @@ namespace Shared.OxySync
 
         public void SetSyncVarValue(int fieldHash, object value)
         {
+            EnsureDiscovered();
             if (_syncVarFields == null) return;
             for (int i = 0; i < _syncVarFields.Count; i++)
             {

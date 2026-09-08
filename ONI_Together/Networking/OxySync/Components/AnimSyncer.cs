@@ -13,6 +13,14 @@ namespace ONI_Together.Networking.OxySync.Components
 
 		private ulong sequenceNumber;
 
+		// Host: the last animation sent, re-sent to a chunk this entity moves into.
+		private bool _hasLast;
+		private float _lastTimestamp;
+		private bool _lastQueueing;
+		private HashedString[] _lastAnimNames;
+		private KAnim.PlayMode _lastMode;
+		private float _lastSpeed, _lastTimeOffset;
+
 		public override void OnSpawn()
 		{
 			using var _ = Profiler.Scope();
@@ -45,6 +53,13 @@ namespace ONI_Together.Networking.OxySync.Components
 				return;
 
 			sequenceNumber++;
+			_hasLast = true;
+			_lastTimestamp = timestamp;
+			_lastQueueing = queueing;
+			_lastAnimNames = animNames;
+			_lastMode = mode;
+			_lastSpeed = speed;
+			_lastTimeOffset = timeOffset;
 			try
 			{
 				CallClientRpc(nameof(RpcPlayAnim), timestamp, sequenceNumber, queueing, animNames, (byte)mode, speed, timeOffset);
@@ -52,6 +67,29 @@ namespace ONI_Together.Networking.OxySync.Components
 			catch (System.Exception e)
 			{
 				DebugConsole.LogError($"[OxySync] Failed to send animation packet: {e}");
+			}
+		}
+
+		/// <summary>
+		/// Interest-group membership carries no animation state: the per-group state
+		/// transfer is the SyncVar snapshot, and this behaviour has no SyncVars. An
+		/// entity that walked into a chunk a client watches kept showing that client's
+		/// own locally-driven animation until the host happened to play something new -
+		/// for critters, which have no other corrector, indefinitely. The last animation
+		/// is re-sent to the new group only.
+		/// </summary>
+		public override void OnInterestGroupChanged(int oldGroup, int newGroup)
+		{
+			if (!_hasLast || newGroup < 0 || !isServer || !MultiplayerSession.IsHost || !isSpawned || ClientRpcs.Count == 0)
+				return;
+			sequenceNumber++;
+			try
+			{
+				CallClientRpc(newGroup, nameof(RpcPlayAnim), _lastTimestamp, sequenceNumber, _lastQueueing, _lastAnimNames, (byte)_lastMode, _lastSpeed, _lastTimeOffset);
+			}
+			catch (System.Exception e)
+			{
+				DebugConsole.LogError($"[OxySync] Failed to re-send the animation to the new interest group: {e}");
 			}
 		}
 

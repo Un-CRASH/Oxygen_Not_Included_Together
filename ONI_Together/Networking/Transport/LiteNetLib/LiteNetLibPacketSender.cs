@@ -55,7 +55,12 @@ namespace ONI_Together.Networking.Transport.Lan
 
         public override bool IsBacklogged(object connection) =>
             connection is NetPeer peer && peer.ConnectionState == ConnectionState.Connected
-            && peer.GetPacketsCountInReliableQueue(DefaultChannel, false) > BacklogThreshold;
+            // ordered: true - the mod only ever sends ReliableOrdered, and LiteNetLib keys
+            // its channels as channel*4 + (ordered ? 2 : 0), so `false` asked about a
+            // ReliableUnordered channel that never exists and always answered 0. Every
+            // backlog gate built on this was dead code: not one "skipped for backlog"
+            // line in a session whose ordered queue reached 8 852 packets.
+            && peer.GetPacketsCountInReliableQueue(DefaultChannel, true) > BacklogThreshold;
 
         private bool SendRaw(object conn, byte[] bytes, IPacket packet, PacketSendMode sendType)
         {
