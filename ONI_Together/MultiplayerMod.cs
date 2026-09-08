@@ -119,6 +119,7 @@ namespace ONI_Together
 				go.AddComponent<NetIdActivityTracker>();
 				go.AddComponent<IdCensus>();
 				go.AddComponent<DiscordRichPresence>();
+				TestHarness.Init(go);
 
 				// CHECKPOINT 5
 				TraceCheckpoint(logPath, "[Trace] Checkpoint 5: Pre-Listeners\n");
