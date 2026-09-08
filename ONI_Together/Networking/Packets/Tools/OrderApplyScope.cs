@@ -92,6 +92,8 @@ namespace ONI_Together.Networking.Packets.Tools
 	{
 		public static void ResetAll()
 		{
+			ONI_Together.Networking.Synchronization.TerrainReconcile.Reset();
+			ONI_Together.Networking.Packets.Animation.StandardWorker_WorkingState_Packet.ResetState();
 			OrderApplyScope.Reset();
 			DragToolPacket.ResetState();
 			Clear.ClearableActionPacket.ProcessingIncoming = false;

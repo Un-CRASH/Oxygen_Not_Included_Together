@@ -35,6 +35,22 @@ namespace ONI_Together.Networking.Packets.Animation
 		string WorkableType;
 		bool StartingToWork;
 
+		/// <summary>
+		/// A start that could not bind yet (the workable's identity has not registered,
+		/// the placer is a frame away) waits up to this long, retried a few times a second.
+		/// The old retry gave up after ten frames (~0.17 s), which is why so many of the
+		/// host's "started working" packets ended as "Could not resolve workable". One
+		/// entry per worker, newest wins: any later packet for the same duplicant - a
+		/// stop, or a start on something else - drops the parked one, so a stale start
+		/// can never re-bind a duplicant that has moved on.
+		/// </summary>
+		private const float PendingSeconds = 5f;
+		private const float PendingInterval = 0.25f;
+		private static readonly Dictionary<int, StandardWorker_WorkingState_Packet> _pendingByWorker = new();
+		private float _deadline;
+
+		internal static void ResetState() => _pendingByWorker.Clear();
+
 		public void Serialize(BinaryWriter writer)
 		{
 			using var _ = Profiler.Scope();
@@ -67,12 +83,18 @@ namespace ONI_Together.Networking.Packets.Animation
 			if (MultiplayerSession.IsHost)
 				return;
 
+			// Any packet for this worker supersedes whatever is parked for it.
+			_pendingByWorker.Remove(WorkerNetId);
+
 			if (TryApply())
 				return;
 
 			if (StartingToWork && Game.Instance != null)
 			{
-				Game.Instance.StartCoroutine(RetryStartWork(Clone()));
+				var pending = Clone();
+				pending._deadline = Time.unscaledTime + PendingSeconds;
+				_pendingByWorker[WorkerNetId] = pending;
+				Game.Instance.StartCoroutine(RetryStartWork(pending));
 			}
 		}
 
@@ -178,15 +200,26 @@ namespace ONI_Together.Networking.Packets.Animation
 
 		private static IEnumerator RetryStartWork(StandardWorker_WorkingState_Packet packet)
 		{
-			for (int attempt = 0; attempt < 10; attempt++)
+			while (Time.unscaledTime < packet._deadline)
 			{
-				yield return null;
+				yield return new WaitForSecondsRealtime(PendingInterval);
 
 				if (!MultiplayerSession.InActiveSession || MultiplayerSession.IsHost)
 					yield break;
+				if (!_pendingByWorker.TryGetValue(packet.WorkerNetId, out var current) || !ReferenceEquals(current, packet))
+					yield break; // superseded by a later packet for this worker
 
-				if (packet.TryApply(logFailure: attempt == 9))
+				if (packet.TryApply())
+				{
+					_pendingByWorker.Remove(packet.WorkerNetId);
 					yield break;
+				}
+			}
+
+			if (_pendingByWorker.TryGetValue(packet.WorkerNetId, out var last) && ReferenceEquals(last, packet))
+			{
+				_pendingByWorker.Remove(packet.WorkerNetId);
+				packet.TryApply(logFailure: true);
 			}
 		}
 	}

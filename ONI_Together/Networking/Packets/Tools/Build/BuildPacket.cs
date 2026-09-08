@@ -139,9 +139,43 @@ namespace ONI_Together.Networking.Packets.Tools.Build
 
                         SetPriority(builtItem);
                         if (builtItem != null)
-                            DebugConsole.Log($"[BuildPacket] Built item {def.PrefabID} at cell {Cell}");
+                            DebugConsole.Log($"[BuildPacket] Built item {def.PrefabID} at cell {Cell}{(_attempt > 0 ? $" (attempt {_attempt + 1})" : string.Empty)}");
+                        else if (ScheduleRetry())
+                            DebugConsole.LogAggregated("BuildPacket.Retry", $"[BuildPacket] Nothing to build for {def.PrefabID} at cell {Cell} yet (layer holds {Describe(Grid.Objects[Cell, (int)def.ObjectLayer])}, solid={Grid.Solid[Cell]}); trying again");
                         else
-                            DebugConsole.LogWarning($"[BuildPacket] Nothing to build for {def.PrefabID} at cell {Cell}: layer holds {Describe(Grid.Objects[Cell, (int)def.ObjectLayer])}, solid={Grid.Solid[Cell]}");
+                            DebugConsole.LogWarning($"[BuildPacket] Nothing to build for {def.PrefabID} at cell {Cell} after {RetryDelays.Length} attempts: layer holds {Describe(Grid.Objects[Cell, (int)def.ObjectLayer])}, solid={Grid.Solid[Cell]}");
+                    }
+
+                    /// <summary>
+                    /// A placement the receiver's world refuses right now is tried again later,
+                    /// not dropped. The two cases seen in the logs: a cancel-then-re-place at
+                    /// one cell applied in one frame, where the game's deferred destroy leaves
+                    /// the dead ghost in Grid.Objects until the end of the frame; and a client's
+                    /// order on a cell the host's world makes valid a little later (a ladder
+                    /// over a dig that had not completed here). On the host a refused client
+                    /// placement was lost for good - BuildComplete is host-only - so the client
+                    /// kept a ghost nobody would ever build.
+                    /// </summary>
+                    private static readonly float[] RetryDelays = { 0f, 2f, 10f, 30f };
+                    private int _attempt;
+
+                    private bool ScheduleRetry()
+                    {
+                        if (_attempt >= RetryDelays.Length || GameScheduler.Instance == null)
+                            return false;
+                        float delay = RetryDelays[_attempt++];
+                        if (delay <= 0f)
+                            GameScheduler.Instance.ScheduleNextFrame("ONI_Together.BuildRetry", _ => Retry());
+                        else
+                            GameScheduler.Instance.Schedule("ONI_Together.BuildRetry", delay, _ => Retry());
+                        return true;
+                    }
+
+                    private void Retry()
+                    {
+                        if (!MultiplayerSession.InActiveSession)
+                            return;
+                        OnDispatched();
                     }
 
                     private static string Describe(GameObject go)
