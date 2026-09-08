@@ -168,7 +168,12 @@ namespace ONI_Together.Patches.World
                     tag.Name
                 )
                 {
-                    IsActive = pickupable.gameObject.activeSelf
+                    IsActive = pickupable.gameObject.activeSelf,
+                    // The item's own weight, or the client instantiates the prefab's default.
+                    Mass = pe != null ? pe.Mass : 0f,
+                    Temperature = pe != null ? pe.Temperature : 0f,
+                    DiseaseIndex = pe != null ? pe.DiseaseIdx : byte.MaxValue,
+                    DiseaseCount = pe != null ? pe.DiseaseCount : 0
                 };
                 PacketSender.SendToAllClients(packet);
             }

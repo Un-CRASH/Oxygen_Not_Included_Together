@@ -73,8 +73,10 @@ public class SpawnPrefabPacket : IPacket
         writer.Write(Position);
         writer.Write(IsActive);
         writer.Write(HasElementData);
-        if (!HasElementData) return;
-        
+        // Always written: a prefab item (a harvested crop, a seed, meat) has a mass of
+        // its own too. Announced without it, a client instantiated the prefab at its
+        // default weight - 1 kg for a 12 kg lettuce harvest - and counted the wrong
+        // calories and resource totals for the rest of the session.
         writer.Write(Mass);
         writer.Write(Temperature);
         writer.Write(DiseaseIndex);
@@ -91,12 +93,21 @@ public class SpawnPrefabPacket : IPacket
         Position = reader.ReadVector3();
         IsActive = reader.ReadBoolean();
         HasElementData = reader.ReadBoolean();
-        if (!HasElementData) return;
-        
         Mass = reader.ReadSingle();
         Temperature = reader.ReadSingle();
         DiseaseIndex = reader.ReadByte();
         DiseaseCount = reader.ReadInt32();
+    }
+
+    /// <summary>The host's mass and temperature for a prefab item, applied after activation the way a harvest sets them.</summary>
+    private void ApplyPrimaryData(GameObject go)
+    {
+        if (HasElementData || Mass <= 0f || go == null) return;
+        var pe = go.GetComponent<PrimaryElement>();
+        if (pe == null) return;
+        pe.Mass = Mass;
+        if (Temperature > 0f) pe.Temperature = Temperature;
+        if (DiseaseIndex != byte.MaxValue && DiseaseCount > 0) pe.AddDisease(DiseaseIndex, DiseaseCount, "Multiplayer Sync");
     }
 
     public void OnDispatched()
@@ -227,6 +238,7 @@ public class SpawnPrefabPacket : IPacket
                         var netIdComp = go.AddOrGet<NetworkIdentity>();
                         netIdComp.OverrideNetId(NetId);
                         ActivateReplica(go);
+                        ApplyPrimaryData(go);
                     }
                 }
             }
