@@ -134,8 +134,45 @@ namespace Shared.OxySync
             }
         }
 
+        // The interval the host actually sends at, and how much it wobbles, from the
+        // host timestamps of the snapshots that arrived (idle heartbeats excluded).
+        private double _avgIntervalMs;
+        private double _jitterMs;
+        private long _lastAddedTimestamp;
+
+        /// <summary>
+        /// Playback delay behind the newest snapshot: twice the interval the host really
+        /// sends at, plus jitter, never less than the nominal 2 x SyncInterval and never
+        /// more than 600 ms. A host below 20 fps sends a moving entity's position every
+        /// 100 ms or worse; with the nominal 100 ms buffer playback kept overrunning the
+        /// last snapshot, so the entity stood still, then jumped - the stutter the client
+        /// showed whenever its window was the busy one on a shared machine.
+        /// </summary>
+        private long BufferMs()
+        {
+            double nominal = SyncInterval * bufferTimeMultiplier * 1000;
+            if (_avgIntervalMs <= 0) return (long)nominal;
+            double adaptive = _avgIntervalMs * bufferTimeMultiplier + 2 * _jitterMs;
+            return (long)Math.Clamp(adaptive, nominal, 600);
+        }
+
         private void AddSnapshot(long timestamp)
         {
+            if (_lastAddedTimestamp != 0 && timestamp > _lastAddedTimestamp)
+            {
+                double delta = timestamp - _lastAddedTimestamp;
+                if (delta < 500)
+                {
+                    if (_avgIntervalMs <= 0) { _avgIntervalMs = delta; _jitterMs = 0; }
+                    else
+                    {
+                        _jitterMs += (Math.Abs(delta - _avgIntervalMs) - _jitterMs) * 0.1;
+                        _avgIntervalMs += (delta - _avgIntervalMs) * 0.1;
+                    }
+                }
+            }
+            if (timestamp > _lastAddedTimestamp) _lastAddedTimestamp = timestamp;
+
             int insertIndex = _snapshots.Count;
             while (insertIndex > 0 && _snapshots[insertIndex - 1].timestamp > timestamp)
                 insertIndex--;
@@ -308,7 +345,7 @@ namespace Shared.OxySync
             }
 
             long now = HostNowMs;
-            long bufferMs = (long)(SyncInterval * bufferTimeMultiplier * 1000);
+            long bufferMs = BufferMs();
             long playbackTime = now - bufferMs;
 
             int index = -1;
@@ -353,7 +390,7 @@ namespace Shared.OxySync
         private void PruneSnapshots()
         {
             long now = HostNowMs;
-            long cutoff = now - (long)(SyncInterval * bufferTimeMultiplier * 2 * 1000);
+            long cutoff = now - BufferMs() * 2;
 
             while (_snapshots.Count > 0 && _snapshots[0].timestamp < cutoff)
                 _snapshots.RemoveAt(0);
