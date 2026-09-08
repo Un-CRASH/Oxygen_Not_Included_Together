@@ -176,14 +176,20 @@ namespace ONI_Together.Patches.World
         [HarmonyPatch(typeof(Storage), nameof(Storage.Store), new System.Type[] { typeof(GameObject), typeof(bool), typeof(bool), typeof(bool), typeof(bool) })]
         public static class StorageStorePatch
         {
-            public static void Postfix(Storage __instance, GameObject go, bool hide_popups, bool block_events, bool do_disease_transfer, bool is_deserializing)
+            /// <summary>Whether the item was in some storage (a duplicant's hands, another container) before this call.</summary>
+            public static void Prefix(GameObject go, out bool __state)
+            {
+                __state = go != null && go.TryGetComponent<Pickupable>(out var pickupable) && pickupable.storage != null;
+            }
+
+            public static void Postfix(Storage __instance, GameObject go, bool hide_popups, bool block_events, bool do_disease_transfer, bool is_deserializing, bool __state)
             {
                 using var _ = Profiler.Scope();
                 try
                 {
                     if (!MultiplayerSession.IsHost || !MultiplayerSession.InActiveSession)
                         return;
-                    if (go == null)
+                    if (go == null || is_deserializing)
                         return;
 
                     var storageIdentity = __instance.GetNetIdentity();
@@ -214,9 +220,14 @@ namespace ONI_Together.Patches.World
                     }
                     else
                     {
+                        // An item that came out of a duplicant's hands or another container
+                        // has no copy on the clients under this id (the ground copy went with
+                        // the pickup, container contents are rebuilt from the blob), so only
+                        // the delivery FX is worth sending. Addressed by id, every one of those
+                        // was a miss that sat in the pending set for the rest of the session.
                         PacketSender.SendToAllClients(new StorageItemPacket
                         {
-                            NetId = itemNetId,
+                            NetId = __state ? 0 : itemNetId,
                             StorageNetId = storageIdentity.NetId,
                             DoDiseaseTransfer = do_disease_transfer,
                             FxPrefix = Storage.FXPrefix.Delivered,

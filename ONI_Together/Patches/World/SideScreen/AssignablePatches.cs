@@ -25,7 +25,13 @@ namespace ONI_Together.Patches.World.SideScreen
     [HarmonyPatch(typeof(Assignable), nameof(Assignable.Assign), typeof(IAssignableIdentity))]
 	public static class Assignable_Assign_Patch
 	{
-		public static void Postfix(Assignable __instance, IAssignableIdentity new_assignee)
+		/// <summary>The assignee before the call: only a change is an order worth sending.</summary>
+		public static void Prefix(Assignable __instance, out IAssignableIdentity __state)
+		{
+			__state = __instance != null ? __instance.assignee : null;
+		}
+
+		public static void Postfix(Assignable __instance, IAssignableIdentity new_assignee, IAssignableIdentity __state)
 		{
 			using var _ = Profiler.Scope();
 
@@ -34,8 +40,13 @@ namespace ONI_Together.Patches.World.SideScreen
 			if (__instance == null || __instance.gameObject == null) return;
             if (__instance.IsNullOrDestroyed()) return;
 
+			// The game re-applies assignments it already has (the suit locker and the
+			// ownables side screen both do), and the reaction to an applied packet
+			// lands a few frames later, outside IsApplying. Neither changed anything.
+			if (ReferenceEquals(__state, new_assignee)) return;
+
             var buildingIdentity = __instance.gameObject.GetComponent<NetworkIdentity>();
-			if (!buildingIdentity)
+			if (!buildingIdentity || buildingIdentity.NetId == 0)
                 return;
 
             int assigneeNetId = -1;
@@ -76,7 +87,8 @@ namespace ONI_Together.Patches.World.SideScreen
 				BuildingNetId = buildingIdentity.NetId,
 				Cell = Grid.PosToCell(__instance.gameObject),
 				AssigneeNetId = assigneeNetId,
-				GroupId = groupId
+				GroupId = groupId,
+				Sender = NetworkConfig.GetLocalID()
 			};
 
             if (MultiplayerSession.IsHost) PacketSender.SendToAllClients(packet);
@@ -87,7 +99,12 @@ namespace ONI_Together.Patches.World.SideScreen
     [HarmonyPatch(typeof(Assignable), nameof(Assignable.Unassign))]
 	public static class Assignable_Unassign_Patch
 	{
-		public static void Postfix(Assignable __instance)
+		public static void Prefix(Assignable __instance, out bool __state)
+		{
+			__state = __instance != null && __instance.assignee != null;
+		}
+
+		public static void Postfix(Assignable __instance, bool __state)
 		{
 			using var _ = Profiler.Scope();
 
@@ -95,8 +112,12 @@ namespace ONI_Together.Patches.World.SideScreen
 			if (!MultiplayerSession.InActiveSession) return;
 			if (__instance.IsNullOrDestroyed()) return;
 
+			// Nothing was assigned: Unassign is called on every locker refresh and as
+			// the game's delayed reaction to an unassign we applied from a packet.
+			if (!__state) return;
+
 			var buildingIdentity = __instance.gameObject.GetComponent<NetworkIdentity>();
-			if (!buildingIdentity)
+			if (!buildingIdentity || buildingIdentity.NetId == 0)
 				return;
 
 			var packet = new AssignmentPacket
@@ -104,7 +125,8 @@ namespace ONI_Together.Patches.World.SideScreen
 				BuildingNetId = buildingIdentity.NetId,
 				Cell = Grid.PosToCell(__instance.gameObject),
 				AssigneeNetId = -1,
-				GroupId = ""
+				GroupId = "",
+				Sender = NetworkConfig.GetLocalID()
 			};
 
 			if (MultiplayerSession.IsHost) PacketSender.SendToAllClients(packet);

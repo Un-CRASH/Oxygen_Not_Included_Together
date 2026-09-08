@@ -10,6 +10,15 @@ namespace ONI_Together.Patches.World
 {
 	public static class PickupablePatches
 	{
+		/// <summary>
+		/// Greater than zero while a host code path spawns an item it announces itself
+		/// (WorldDamage.OnDigComplete sends WorldDamageSpawnResourcePacket). The generic
+		/// Pickupable.OnSpawn announcement below must stay quiet then: a dig drop was
+		/// announced twice, and the client's second copy displaced the first one to a
+		/// random id - a permanent ghost ore pile per dig.
+		/// </summary>
+		internal static int SuppressAnnounce;
+
         /// <summary>
         /// Living things and markers are synced by other means; only loose items go
         /// through the ground-item packets.
@@ -110,6 +119,8 @@ namespace ONI_Together.Patches.World
 
                     // Skip if triggered by packet dispatch
                     if (SpawnPrefabPacket.ProcessingIncoming || WorldDamageSpawnResourcePacket.ProcessingIncoming)
+                        return;
+                    if (SuppressAnnounce > 0)
                         return;
 
                     // Skip if already in container/storage
@@ -269,6 +280,14 @@ namespace ONI_Together.Patches.World
                     // Absorbed into another stack: PickupableAbsorbPatch has told the
                     // clients, with the new amount of the absorber.
                     if (__instance.wasAbsorbed)
+                        return;
+
+                    // Destroyed inside a container (smelted, eaten, planted, consumed by a
+                    // fabricator). The client has no copy under this id to remove: the
+                    // copy it had on the ground went with the StorageItemPacket when the
+                    // item was stored, and container contents are rebuilt from the blob.
+                    // Every such packet was a guaranteed miss that fed the pending set.
+                    if (__instance.storage != null)
                         return;
 
                     var identity = __instance.GetNetIdentity();

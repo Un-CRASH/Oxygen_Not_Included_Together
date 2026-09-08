@@ -17,6 +17,8 @@ namespace ONI_Together.Networking.Packets.World
 		public int Cell;                // Cell location for fallback lookup
 		public int AssigneeNetId;       // NetID of the duplicant being assigned (-1 for unassign)
 		public string GroupId = "";     // For assignment groups like "public"
+		/// <summary>The peer that made the change; the host relays to everyone but them.</summary>
+		public ulong Sender;
 
 		public static bool IsApplying = false;
 
@@ -28,6 +30,7 @@ namespace ONI_Together.Networking.Packets.World
 			writer.Write(Cell);
 			writer.Write(AssigneeNetId);
 			writer.Write(GroupId ?? "");
+			writer.Write(Sender);
 		}
 
 		public void Deserialize(BinaryReader reader)
@@ -38,11 +41,16 @@ namespace ONI_Together.Networking.Packets.World
 			Cell = reader.ReadInt32();
 			AssigneeNetId = reader.ReadInt32();
 			GroupId = reader.ReadString();
+			Sender = reader.ReadUInt64();
 		}
 
 		public void OnDispatched()
 		{
 			using var _ = Profiler.Scope();
+
+			// Our own change, relayed back by a host that did not know the sender yet.
+			if (Sender != 0 && Sender == NetworkConfig.GetLocalID())
+				return;
 
 			DebugConsole.Log($"[AssignmentPacket] Received: BuildingNetId={BuildingNetId}, Cell={Cell}, AssigneeNetId={AssigneeNetId}, GroupId={GroupId}");
 
@@ -119,8 +127,11 @@ namespace ONI_Together.Networking.Packets.World
 			// HOST RELAY
 			if (MultiplayerSession.IsHost)
 			{
-				PacketSender.SendToAllClients(this);
-				DebugConsole.Log($"[AssignmentPacket] Host relayed assignment to all clients.");
+				// Never back to the peer that made the change: its own copy is already
+				// in that state, and applying the echo re-fired the patches on it (one
+				// atmo-suit unassign became four packets and two warnings per cycle).
+				PacketSender.SendToAllExcluding(this, [MultiplayerSession.HostUserID, Sender]);
+				DebugConsole.Log($"[AssignmentPacket] Host relayed assignment to the other clients.");
 			}
 		}
 

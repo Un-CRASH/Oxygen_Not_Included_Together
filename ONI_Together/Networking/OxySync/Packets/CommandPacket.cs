@@ -44,6 +44,10 @@ namespace ONI_Together.Networking.OxySync.Packets
 
             if (!MultiplayerSession.IsHost) return;
 
+            // A behaviour that spawned before its identity registered sends with id 0,
+            // which no lookup can answer; tens of thousands of "Lookup failed" per session.
+            if (NetId == 0) return;
+
             var behaviour = OxySyncManager.ResolveBehaviour(NetId, BehaviourId);
 
             if (behaviour == null)

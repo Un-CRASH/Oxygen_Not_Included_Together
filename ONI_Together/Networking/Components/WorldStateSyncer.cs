@@ -358,7 +358,12 @@ namespace ONI_Together.Networking.Components
 				// Add Missing
 				foreach (var cell in packet.DigCells)
 				{
-					if (!localDigs.Contains(cell))
+					// The placer layer as well as the component list: a placer an order put
+					// down this very frame (a replayed DiggablePacket after a hard sync) is on
+					// the layer before it is in the list, and a second one at the same cell
+					// took the deterministic id plus two, so the host's priority for that
+					// dig resolved to nothing.
+					if (!localDigs.Contains(cell) && !(Grid.IsValidCell(cell) && Grid.Objects[cell, (int)ObjectLayer.DigPlacer] != null))
 					{
 						//DebugConsole.Log($"[WorldStateSyncer] Adding missing dig at {cell}");
 						// Use DigTool logic without sending a packet back!

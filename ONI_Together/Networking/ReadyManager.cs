@@ -28,6 +28,7 @@ namespace ONI_Together.Networking
 
 			//CoroutineRunner.RunOne(DelayAllReadyBroadcast());
 			PacketSender.SendToAllClients(new AllClientsReadyPacket());
+			Synchronization.HardSyncBacklog.Flush();
 			AllClientsReadyPacket.ProcessAllReady();
 		}
 
@@ -193,6 +194,8 @@ namespace ONI_Together.Networking
 			if (MultiplayerSession.ConnectedPlayers.Count <= 1)
 			{
 				AllClientsReadyPacket.ProcessAllReady();//bypass sending packet if its just the host left
+				// The backlog is kept: a client reloading the hard-sync save leaves the
+				// session for the load and comes back, and this branch runs while it is away.
 				return;
 			}
 

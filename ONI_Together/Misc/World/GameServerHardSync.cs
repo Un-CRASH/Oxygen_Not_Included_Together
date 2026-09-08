@@ -3,6 +3,7 @@ using ONI_Together.Menus;
 using ONI_Together.Networking.Packets.Core;
 using ONI_Together.Networking.OxySync.Components;
 using ONI_Together.Networking.Packets.World;
+using ONI_Together.Networking.Synchronization;
 using ONI_Together.Networking.States;
 using System.Collections;
 using System.Collections.Generic;
@@ -52,6 +53,7 @@ namespace ONI_Together.Networking
             numberOfClientsAtTimeOfSync = MultiplayerSession.ConnectedPlayers.Count;
 			var packet = new HardSyncPacket();
 			PacketSender.SendToAllClients(packet);
+			HardSyncBacklog.Begin();
 
 			// Hide other player cursors as they are in hard sync and it'll reappear when they start sending packets again
 			foreach (PlayerCursor cursor in MultiplayerSession.PlayerCursors.Values)
@@ -96,6 +98,7 @@ namespace ONI_Together.Networking
 		{
 			++_generation;
 			_unreadySince.Clear();
+			HardSyncBacklog.Discard();
 			hardSyncInProgress = false;
 			hardSyncDoneThisCycle = false;
 			numberOfClientsAtTimeOfSync = 0;

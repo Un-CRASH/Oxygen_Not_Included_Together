@@ -49,14 +49,36 @@ namespace ONI_Together.Networking
 			if (netId == 0) return Register(entity);
 			if (TryGet(netId, out var existing, logFailure: false) && !ReferenceEquals(existing, entity))
 			{
-				// Duplicate saved/cloned IDs cannot address two objects. The host saves
-				// and announces this new ID; a client later adopts the host's mapping.
-				int replacement = Register(entity);
+				// Duplicate saved/cloned IDs cannot address two objects. The replacement is
+				// the next free id after the wanted one, never a random one: a random id is
+				// a value the other peer cannot reproduce, so an object renamed that way
+				// (a DigPlacer over a stale one, a tile over a leaked sleep locator) was
+				// unaddressable for the rest of the session. Two peers that see the same
+				// collision now land on the same replacement; the host still announces
+				// what it chose for the objects it spawns.
+				int replacement = NextFree(netId);
+				if (replacement == 0)
+					replacement = Register(entity);
+				else
+					identities[replacement] = entity;
 				DebugConsole.LogAggregated("Registry.LiveCollision", $"[Registry] NetId {netId} belongs to {existing.name}; assigned {replacement} to {entity.name} at cell {Grid.PosToCell(entity.gameObject)}");
 				return replacement;
 			}
 			identities[netId] = entity;
 			return netId;
+		}
+
+		/// <summary>The first free id after netId (probing upward, 64 tries), or 0.</summary>
+		private static int NextFree(int netId)
+		{
+			int candidate = netId;
+			for (int i = 0; i < 64; i++)
+			{
+				candidate = candidate == int.MaxValue ? int.MinValue : candidate + 1;
+				if (candidate != 0 && !identities.ContainsKey(candidate))
+					return candidate;
+			}
+			return 0;
 		}
 
 		public static void RegisterOverride(NetworkIdentity entity, int netId)

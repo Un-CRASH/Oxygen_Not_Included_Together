@@ -46,7 +46,16 @@ namespace ONI_Together.Patches.World
 			float num = mass * 0.5f;
 			if (!(num <= 0f))
 			{
-				GameObject gameObject = element.substance.SpawnResource(vector, num, temperature, disease_idx, disease_count);
+				GameObject gameObject;
+				PickupablePatches.SuppressAnnounce++;
+				try
+				{
+					gameObject = element.substance.SpawnResource(vector, num, temperature, disease_idx, disease_count);
+				}
+				finally
+				{
+					PickupablePatches.SuppressAnnounce--;
+				}
 				NetworkIdentity networkIdentity = gameObject.GetComponent<NetworkIdentity>();
 
 				Pickupable component = gameObject.GetComponent<Pickupable>();

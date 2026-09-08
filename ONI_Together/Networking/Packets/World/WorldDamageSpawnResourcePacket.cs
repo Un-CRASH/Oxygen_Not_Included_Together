@@ -82,6 +82,14 @@ namespace ONI_Together.Networking.Packets.World
 				if (dropMass <= 0f)
 					return;
 
+				// Already here under this id (the same drop announced twice, or a replay):
+				// a second copy would displace the first one to a random id.
+				if (NetworkIdentityRegistry.TryGet(NetId, out var existing, logFailure: false) && existing != null)
+				{
+					DebugConsole.LogAggregated("WorldDamageSpawn.Duplicate", $"[WorldDamageSpawnResourcePacket] NetId {NetId} already exists here as {existing.name}; not spawning a second copy");
+					return;
+				}
+
 				GameObject dropped = element.substance.SpawnResource(Position, dropMass, Temperature, DiseaseIndex, DiseaseCount);
 				NetworkIdentity identity = dropped.GetComponent<NetworkIdentity>();
 				identity.OverrideNetId(NetId);

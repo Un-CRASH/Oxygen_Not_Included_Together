@@ -115,8 +115,10 @@ namespace ONI_Together.Networking.Components
                 // holds, and a registry that has quietly lost an entry is one of the things
                 // worth catching rather than trusting.
                 _snapshot = new List<int>();
+                // Inactive included: items inside containers are addressed by id too, and
+                // they are the class of object that goes missing most.
                 foreach (var identity in Object.FindObjectsByType<NetworkIdentity>(
-                             FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+                             FindObjectsInactive.Include, FindObjectsSortMode.None))
                 {
                     if (identity.IsNullOrDestroyed() || identity.NetId == 0) continue;
                     _snapshot.Add(identity.NetId);
@@ -149,6 +151,9 @@ namespace ONI_Together.Networking.Components
                     CyclesCompleted++;
                     _missingLastCycle.Clear();
                     foreach (int id in _missingThisCycle) _missingLastCycle.Add(id);
+                    // One line per pass, so a session can be judged without log archaeology:
+                    // the per-id lines below stop after ten.
+                    DebugConsole.Log($"[Census] pass {CyclesCompleted} done: {Checked} ids checked so far, {_missingThisCycle.Count} missing on this pass, {MissingPersistent} missing on two consecutive passes in total; registry holds {NetworkIdentityRegistry.Count}");
                 }
                 _missingThisCycle.Clear();
                 _cycleSeen = cycle;

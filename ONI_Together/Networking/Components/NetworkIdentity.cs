@@ -15,6 +15,13 @@ namespace ONI_Together.Networking.Components
 		[SkipSaveFileSerialization]
 		public bool IsRegistered { get; private set; } = false;
 
+		/// <summary>
+		/// The id came from the host: an announcement (OverrideNetId) or the host's save.
+		/// An id this side computed for itself is one the host may never have heard of.
+		/// </summary>
+		[SkipSaveFileSerialization]
+		public bool HostAssigned { get; private set; }
+
 		public override void OnSpawn()
 		{
 			using var _ = Profiler.Scope();
@@ -35,6 +42,9 @@ namespace ONI_Together.Networking.Components
 				// DebugConsole.LogWarning($"[NetworkIdentity] Skipping registration for {gameObject.name} - Grid not ready");
 				return;
 				}
+
+			if (NetId != 0 && !IsRegistered)
+				HostAssigned = true;
 
 
 			// Try to handle deterministic ID for buildings first
@@ -87,7 +97,25 @@ namespace ONI_Together.Networking.Components
 			// Any NetworkBehaviour that spawned before this ran was indexed under NetId 0.
 			OxySyncManager.RekeyBehaviours(gameObject, NetId);
 			PendingWorkableProgress.IdentityReady(NetId);
-			}
+			ApplyPendingRemoval();
+		}
+
+		/// <summary>
+		/// The host removed this id before we had an object for it (see PendingRemovals);
+		/// now that we do, remove it. Only items: an unrelated object that merely hashes to
+		/// a pending id consumes the entry and stays.
+		/// </summary>
+		private void ApplyPendingRemoval()
+		{
+			if (!MultiplayerSession.IsClient || NetId == 0)
+				return;
+			if (!PendingRemovals.TryConsume(NetId))
+				return;
+			if (GetComponent<Pickupable>() == null)
+				return;
+			DebugConsole.LogAggregated("PendingRemoval.Applied", $"[NetworkIdentity] {gameObject.name} registered under NetId {NetId}, which the host had already removed; destroyed");
+			Util.KDestroyGameObject(gameObject);
+		}
 
 		/// <summary>
 		/// This will be primarily used when the host spawns in an object and the client and host need to sync the netid
@@ -116,6 +144,8 @@ namespace ONI_Together.Networking.Components
 			// The sync manager filed our behaviours under the old NetId.
 			OxySyncManager.RekeyBehaviours(gameObject, netIdOverride);
 			PendingWorkableProgress.IdentityReady(netIdOverride);
+			HostAssigned = true;
+			ApplyPendingRemoval();
 
 			//DebugConsole.Log($"[NetworkIdentity] Overridden NetId. New NetId = {NetId} for {gameObject.name}");
 		}

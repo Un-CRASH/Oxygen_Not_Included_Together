@@ -326,6 +326,9 @@ namespace ONI_Together.Networking
 		{
 			using var _ = Profiler.Scope();
 
+			if (Synchronization.HardSyncBacklog.TryCapture(packet, sendType))
+				return;
+
             // Only send this packet if its being observed by a someone
             if (packet is IViewportCullable vp && WorldStateSyncer.Instance != null)
             {
@@ -387,9 +390,43 @@ namespace ONI_Together.Networking
 			SendToAll(packet, MultiplayerSession.HostUserID, sendType);
 		}
 
+		/// <summary>
+		/// For periodic re-broadcasts (status items, chore lists, conduit contents,
+		/// diagnostics): a client whose reliable channel is far behind gets this tick
+		/// skipped instead of more traffic on top of the backlog. The next tick repeats
+		/// the state anyway. One session's mass deconstruct pushed the host past the
+		/// link's ceiling and the queue to a client grew to 22 000 packets in ten minutes
+		/// while these broadcasters kept adding to it.
+		/// </summary>
+		public static void SendToAllClientsUnlessBacklogged(IPacket packet, PacketSendMode sendType = PacketSendMode.Reliable)
+		{
+			using var _ = Profiler.Scope();
+
+			if (!MultiplayerSession.IsHost)
+				return;
+
+			var sender = NetworkConfig.TransportPacketSender;
+			foreach (var player in MultiplayerSession.ConnectedPlayers.Values)
+			{
+				if (player.PlayerId == MultiplayerSession.HostUserID)
+					continue;
+				if (!CanBroadcastTo(player))
+					continue;
+				if (player.Connection != null && sender.IsBacklogged(player.Connection))
+				{
+					Transport.NetStats.RecordBacklogSkip();
+					continue;
+				}
+				TrySendToConnection(player, packet, sendType);
+			}
+		}
+
 		public static void SendToAllExcluding(IPacket packet, HashSet<ulong> excludedIds, PacketSendMode sendType = PacketSendMode.Reliable)
 		{
 			using var _ = Profiler.Scope();
+
+			if (Synchronization.HardSyncBacklog.TryCapture(packet, sendType))
+				return;
 
             if (packet is IViewportCullable vp && WorldStateSyncer.Instance != null)
             {

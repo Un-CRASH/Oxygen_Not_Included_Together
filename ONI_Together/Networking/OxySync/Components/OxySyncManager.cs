@@ -91,6 +91,13 @@ namespace ONI_Together.Networking.OxySync.Components
 
             NetworkBehaviour.SendCommandToHost = (netId, behaviourId, methodHash, args, sendType) =>
             {
+                // Not registered yet: the host cannot resolve id 0, and the behaviour is
+                // rekeyed and resends its state once the identity registers.
+                if (netId == 0)
+                {
+                    DebugConsole.LogAggregated("OxySync.CommandNoId", $"[OxySync] Command {methodHash} for behaviour {behaviourId} dropped: identity not registered yet");
+                    return true;
+                }
                 PacketSender.SendToHost(new CommandPacket
                 {
                     NetId = netId,
@@ -651,8 +658,14 @@ namespace ONI_Together.Networking.OxySync.Components
                 !found.IsNullOrDestroyed())
                 return found;
 
-            if (!NetworkIdentityRegistry.TryGet(netId, out var identity) || identity.IsNullOrDestroyed() || identity.gameObject.IsNullOrDestroyed())
+            if (!NetworkIdentityRegistry.TryGet(netId, out var identity, logFailure: false) || identity.IsNullOrDestroyed() || identity.gameObject.IsNullOrDestroyed())
+            {
+                // Once per address: what matters is which addresses are dead, not how
+                // many packets hit them (282 267 lines in one host log).
+                if (_fallbackWarned.Add((netId, behaviourId)))
+                    DebugConsole.LogAggregated("OxySync.UnknownNetId", $"[OxySync] Packet for NetId {netId} behaviour {behaviourId} dropped: no such object here");
                 return null;
+            }
 
             var candidates = identity.gameObject.GetComponents<NetworkBehaviour>();
             NetworkBehaviour match = null;

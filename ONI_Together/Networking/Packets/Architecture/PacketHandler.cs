@@ -98,6 +98,8 @@ namespace ONI_Together.Networking.Packets.Architecture
 		/// True when this packet may run on the local side right now. Only a client with no
 		/// world is restricted; a host, or a client in a loaded world, dispatches everything.
 		/// </summary>
+		public static bool IsAllowedWithoutWorld(Type type) => AllowedWithoutWorld.Contains(type);
+
 		public static bool ShouldDispatchWithoutWorld(IPacket packet)
 		{
 			using var _ = Profiler.Scope();
