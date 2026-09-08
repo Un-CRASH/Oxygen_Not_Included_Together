@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using HarmonyLib;
 using ONI_Together.DebugTools;
+using ONI_Together.Networking;
 using UnityEngine;
 using static LogicGateVisualizer;
 
@@ -60,6 +61,10 @@ namespace ONI_Together.Misc
                 writer.Write(pe.Temperature);
                 writer.Write(pe.DiseaseIdx);
                 writer.Write(pe.DiseaseCount);
+                // The item's id, so the receiver keeps the same object for the same item
+                // (masses were landing on the wrong stack when matched by prefab alone).
+                var identity = go.GetExistingNetIdentity();
+                writer.Write(identity != null ? identity.NetId : 0);
             }
 
             return ms.ToArray();
@@ -91,6 +96,11 @@ namespace ONI_Together.Misc
         // capacityKg + count
         private const int BLOB_HEADER_SIZE = sizeof(float) + sizeof(int);
 
+        private struct BlobEntry
+        {
+            public int Hash; public float Mass; public float Temperature; public byte DiseaseIdx; public int DiseaseCount; public int NetId; public int Match;
+        }
+
         private static void RebuildFromBlob(Storage storage, byte[] blob, string diseaseReason)
         {
             if (blob == null || blob.Length < BLOB_HEADER_SIZE)
@@ -101,14 +111,30 @@ namespace ONI_Together.Misc
 
             float capacityKg = reader.ReadSingle();
             int count = reader.ReadInt32();
+            var entries = new List<BlobEntry>(count);
+            for (int i = 0; i < count; i++)
+            {
+                var e = new BlobEntry
+                {
+                    Hash = reader.ReadInt32(),
+                    Mass = reader.ReadSingle(),
+                    Temperature = reader.ReadSingle(),
+                    DiseaseIdx = reader.ReadByte(),
+                    DiseaseCount = reader.ReadInt32(),
+                    NetId = reader.ReadInt32(),
+                    Match = -1,
+                };
+                if (e.Mass > 0f) entries.Add(e);
+            }
 
             // Applied as a difference, not as empty-and-refill. The items a client loaded
             // from the save carry the host's ids; deleting them and instantiating fresh
             // copies gave a container's contents new, local ids on every snapshot, so a
-            // host packet naming a stored item never resolved here. An item of the same
-            // prefab that is already there is kept and its mass and temperature set; only
-            // what is missing is created and only what is gone is deleted. Suits and
-            // animals (IsEntityNotContents) are left alone either way.
+            // host packet naming a stored item never resolved here. An item is matched by
+            // the host's id first, then by prefab (a copy this side made itself has an id
+            // of its own), and gets its mass and temperature set; only what is missing is
+            // created and only what is gone is deleted. Suits and animals
+            // (IsEntityNotContents) are left alone either way.
             var existing = new List<GameObject>();
             for (int i = 0; i < storage.items.Count; i++)
             {
@@ -119,39 +145,52 @@ namespace ONI_Together.Misc
             }
             var matched = new bool[existing.Count];
 
-            for (int i = 0; i < count; i++)
+            for (int pass = 0; pass < 2; pass++)
             {
-                int hash = reader.ReadInt32();
-                float mass = reader.ReadSingle();
-                float temperature = reader.ReadSingle();
-                byte diseaseIdx = reader.ReadByte();
-                int diseaseCount = reader.ReadInt32();
-                if (mass <= 0f) continue;
-
-                Tag tag = new Tag(hash);
-                int found = -1;
-                for (int j = 0; j < existing.Count; j++)
+                for (int i = 0; i < entries.Count; i++)
                 {
-                    if (matched[j] || existing[j].PrefabID() != tag) continue;
-                    found = j;
-                    break;
+                    var e = entries[i];
+                    if (e.Match >= 0) continue;
+                    if (pass == 0 && e.NetId == 0) continue;
+                    Tag tag = new Tag(e.Hash);
+                    for (int j = 0; j < existing.Count; j++)
+                    {
+                        if (matched[j]) continue;
+                        if (pass == 0)
+                        {
+                            var id = existing[j].GetExistingNetIdentity();
+                            if (id == null || id.NetId != e.NetId) continue;
+                        }
+                        else if (existing[j].PrefabID() != tag) continue;
+                        matched[j] = true;
+                        e.Match = j;
+                        entries[i] = e;
+                        break;
+                    }
                 }
-                if (found >= 0)
+            }
+
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var e = entries[i];
+                if (e.Match >= 0)
                 {
-                    matched[found] = true;
-                    var pe = existing[found].GetComponent<PrimaryElement>();
+                    var kept = existing[e.Match];
+                    var pe = kept.GetComponent<PrimaryElement>();
                     if (pe != null)
                     {
-                        if (Mathf.Abs(pe.Mass - mass) > 0.0005f) pe.Mass = mass;
-                        if (Mathf.Abs(pe.Temperature - temperature) > 0.01f) pe.Temperature = temperature;
+                        if (Mathf.Abs(pe.Mass - e.Mass) > 0.0005f) pe.Mass = e.Mass;
+                        if (Mathf.Abs(pe.Temperature - e.Temperature) > 0.01f) pe.Temperature = e.Temperature;
                     }
+                    AdoptHostId(kept, e.NetId);
                     continue;
                 }
 
+                Tag tag = new Tag(e.Hash);
                 Element elementByHash = ElementLoader.GetElement(tag);
                 if (elementByHash != null)
                 {
-                    storage.AddElement(elementByHash.id, mass, temperature, diseaseIdx, diseaseCount);
+                    storage.AddElement(elementByHash.id, e.Mass, e.Temperature, e.DiseaseIdx, e.DiseaseCount);
                     continue;
                 }
 
@@ -161,10 +200,10 @@ namespace ONI_Together.Misc
                 var scrapObject = GameUtil.KInstantiate(prefab, storage.transform.position, Grid.SceneLayer.Ore);
                 if (scrapObject.TryGetComponent<PrimaryElement>(out var newPe))
                 {
-                    newPe.Mass = mass;
-                    newPe.Temperature = temperature;
-                    if (diseaseIdx != byte.MaxValue)
-                        newPe.AddDisease(diseaseIdx, diseaseCount, diseaseReason);
+                    newPe.Mass = e.Mass;
+                    newPe.Temperature = e.Temperature;
+                    if (e.DiseaseIdx != byte.MaxValue)
+                        newPe.AddDisease(e.DiseaseIdx, e.DiseaseCount, diseaseReason);
                 }
                 scrapObject.SetActive(true);
                 // Stored the way the game restores a save: no merging into a stack that is
@@ -175,6 +214,7 @@ namespace ONI_Together.Misc
                 // container's cell as far as the rest of the game could tell.
                 storage.Store(scrapObject, true, false, true, true);
                 storage.ApplyStoredItemModifiers(scrapObject, true, false);
+                AdoptHostId(scrapObject, e.NetId);
             }
 
             for (int j = 0; j < existing.Count; j++)
@@ -183,6 +223,17 @@ namespace ONI_Together.Misc
                     existing[j].DeleteObject();
             }
             storage.items.RemoveAll(item => item == null || item.IsNullOrDestroyed());
+        }
+
+        /// <summary>A stored item takes the host's id for it, so host packets about it resolve here; not when another object already answers to that id.</summary>
+        private static void AdoptHostId(GameObject go, int netId)
+        {
+            if (netId == 0 || go == null) return;
+            var identity = go.GetExistingNetIdentity();
+            if (identity == null || identity.NetId == netId) return;
+            if (NetworkIdentityRegistry.TryGet(netId, out var other, logFailure: false) && other != null && other.gameObject != go)
+                return;
+            identity.OverrideNetId(netId);
         }
         
         /// <summary>
