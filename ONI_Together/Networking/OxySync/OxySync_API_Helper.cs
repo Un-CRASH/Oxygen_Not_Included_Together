@@ -213,8 +213,10 @@ namespace ONI_Together.Networking.OxySync
                 if (adapter.NetId == 0)
                     return;
 
-                _foreignLookup[(adapter.NetId, adapter.BehaviourId)] = adapter;
+                // Register first: on a collision RegisterSyncBehaviour moves the behaviour to
+                // another id, and the cache must be keyed by the id it ends up with.
                 OxySyncManager.Instance.RegisterSyncBehaviour(adapter);
+                _foreignLookup[(adapter.NetId, adapter.BehaviourId)] = adapter;
             }
             catch (Exception ex)
             {
@@ -426,23 +428,35 @@ namespace ONI_Together.Networking.OxySync
 
             if (_foreignLookup.TryGetValue((netId, behaviourId), out var adapter))
             {
-                behaviour = adapter;
-                return true;
+                if (!adapter.IsDestroyed)
+                {
+                    behaviour = adapter;
+                    return true;
+                }
+                _foreignLookup.Remove((netId, behaviourId));
             }
 
             if (!NetworkIdentityRegistry.TryGet(netId, out var identity) || identity == null || identity.gameObject.IsNullOrDestroyed())
                 return false;
 
+            // Match by behaviour id: an object can carry several API behaviours, and the
+            // first one is not necessarily the one this packet is addressed to. Caching the
+            // first one under the requested key made every later packet for that key go to it.
             for (int i = 0; i < _bridgedAssemblies.Count; i++)
             {
-                var component = identity.gameObject.GetComponent(_bridgedAssemblies[i].NetworkBehaviourType);
-                if (component == null)
-                    continue;
+                foreach (var component in identity.gameObject.GetComponents(_bridgedAssemblies[i].NetworkBehaviourType))
+                {
+                    if (component == null)
+                        continue;
 
-                adapter = new ForeignSyncBehaviour(component);
-                _foreignLookup[(netId, behaviourId)] = adapter;
-                behaviour = adapter;
-                return true;
+                    adapter = new ForeignSyncBehaviour(component);
+                    if (adapter.BehaviourId != behaviourId)
+                        continue;
+
+                    _foreignLookup[(netId, behaviourId)] = adapter;
+                    behaviour = adapter;
+                    return true;
+                }
             }
 
             return false;

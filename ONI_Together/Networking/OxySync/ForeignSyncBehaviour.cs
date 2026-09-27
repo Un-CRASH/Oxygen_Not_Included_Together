@@ -194,7 +194,10 @@ namespace ONI_Together.Networking.OxySync
         }
 
         public GameObject GameObject => _gameObject;
-        public bool IsDestroyed => _gameObject == null || _gameObject.IsNullOrDestroyed();
+        // The component can be destroyed while its GameObject lives on (Destroy(behaviour)),
+        // so check both; UnityEngine.Object's == treats a destroyed object as null.
+        public bool IsDestroyed => _gameObject == null || _gameObject.IsNullOrDestroyed()
+            || (_instance is UnityEngine.Object component && component == null);
         public Type UnderlyingType => _type;
         public System.Reflection.Assembly SourceAssembly => _type.Assembly;
 
