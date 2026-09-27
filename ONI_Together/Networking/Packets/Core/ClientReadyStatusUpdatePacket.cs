@@ -6,7 +6,7 @@ using Shared.Profiling;
 
 namespace ONI_Together.Networking.Packets.Core
 {
-	public class ClientReadyStatusUpdatePacket : IPacket, IPriorityPacket
+	public class ClientReadyStatusUpdatePacket : IPacket, IPriorityPacket, IAllowedWithoutWorldPacket
 	{
 		public string Message;
 

@@ -13,7 +13,7 @@ using Shared.Profiling;
 
 namespace ONI_Together.Networking.Packets.Core
 {
-	internal class BulkSenderPacket : IPacket
+	internal class BulkSenderPacket : IPacket, IAllowedWithoutWorldPacket
 	{
 		public BulkSenderPacket() { }
 		public BulkSenderPacket(int packetId, List<byte[]> innerData)

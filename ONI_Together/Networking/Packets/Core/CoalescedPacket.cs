@@ -22,7 +22,7 @@ namespace ONI_Together.Networking.Packets.Core
 	/// unchanged: the no-world gate, the tracker and the per-packet exception handling
 	/// apply to every entry as if it had arrived on its own.
 	/// </summary>
-	internal class CoalescedPacket : IPacket
+	internal class CoalescedPacket : IPacket, IAllowedWithoutWorldPacket
 	{
 		// The sender keeps a container under 1000 bytes, so an entry can never exceed that
 		// and fewer than 128 fit; the reader refuses anything claiming more.
