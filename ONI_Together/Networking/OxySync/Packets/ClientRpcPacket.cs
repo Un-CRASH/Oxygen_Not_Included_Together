@@ -51,9 +51,7 @@ namespace ONI_Together.Networking.OxySync.Packets
             if (TargetPlayerId != ulong.MaxValue && TargetPlayerId != MultiplayerSession.LocalUserID)
                 return;
 
-            var behaviour = OxySyncManager.ResolveBehaviour(NetId, BehaviourId);
-            
-            if (behaviour == null)
+            if (!SyncBehaviourResolver.TryResolve(NetId, BehaviourId, out var behaviour))
                 return;
 
             // A TargetRpc travels in this packet with the player id set; its handlers live

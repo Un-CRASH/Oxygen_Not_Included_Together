@@ -3,7 +3,7 @@ using Shared.Profiling;
 
 namespace ONI_Together.Patches.World
 {
-	[HarmonyPatch(typeof(AirConditioner), "UpdateState", new System.Type[] { typeof(float) })]
+	[HarmonyPatch(typeof(AirConditioner), nameof(AirConditioner.UpdateState), new System.Type[] { typeof(float) })]
 	internal static class AirConditionerPatch
 	{
 		// An Aquatuner or Air Conditioner whose sim handle does not exist yet.
@@ -41,7 +41,8 @@ namespace ONI_Together.Patches.World
 		{
 			using var _ = Profiler.Scope();
 
-			return __instance.structureTemperature.IsValid();
+			// structureTemperature is a struct (HandleVector<int>.Handle), so no ?. on it.
+			return __instance != null && __instance.structureTemperature.IsValid();
 		}
 	}
 }

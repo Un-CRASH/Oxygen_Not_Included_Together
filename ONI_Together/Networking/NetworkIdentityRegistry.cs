@@ -132,6 +132,21 @@ namespace ONI_Together.Networking
 
 
 
+		[API_Method]
+		public static bool TryGetGameObject(int netId, out GameObject gameObject)
+		{
+			using var _ = Profiler.Scope();
+
+			gameObject = null;
+			if (!TryGet(netId, out var identity))
+				return false;
+			if (identity.IsNullOrDestroyed() || identity.gameObject.IsNullOrDestroyed())
+				return false;
+
+			gameObject = identity.gameObject;
+			return true;
+		}
+
 		public static bool TryGet(int netId, out NetworkIdentity entity, bool logFailure = true)
 		{
 			using var _ = Profiler.Scope();
@@ -153,6 +168,7 @@ namespace ONI_Together.Networking
 			return found;
 		}
 
+		[API_Method]
 		public static bool TryGetComponent<T>(int netId, out T component)
 		{
 			using var _ = Profiler.Scope();

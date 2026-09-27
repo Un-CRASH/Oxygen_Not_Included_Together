@@ -48,9 +48,7 @@ namespace ONI_Together.Networking.OxySync.Packets
             // which no lookup can answer; tens of thousands of "Lookup failed" per session.
             if (NetId == 0) return;
 
-            var behaviour = OxySyncManager.ResolveBehaviour(NetId, BehaviourId);
-
-            if (behaviour == null)
+            if (!SyncBehaviourResolver.TryResolve(NetId, BehaviourId, out var behaviour))
                 return;
 
             behaviour.InvokeCommand(MethodHash, Args);

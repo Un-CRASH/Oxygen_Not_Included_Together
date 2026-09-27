@@ -42,17 +42,17 @@ namespace ONI_Together.Networking.OxySync.Packets
 
             if (MultiplayerSession.IsHost) return;
 
-            var behaviour = OxySyncManager.ResolveBehaviour(NetId, BehaviourId);
-
-            if (behaviour == null)
+            if (!SyncBehaviourResolver.TryResolve(NetId, BehaviourId, out var behaviour))
                 return;
 
-            var fields = behaviour.SyncVarFields;
-            for (int i = 0; i < fields.Count; i++)
+            behaviour.RefreshSyncVars();
+            int fieldCount = behaviour.SyncVarCount;
+            for (int i = 0; i < fieldCount; i++)
             {
-                if (fields[i].Hash == FieldHash)
+                var field = behaviour.GetSyncVar(i);
+                if (field.Hash == FieldHash)
                 {
-                    var obj = VariantHelper.VariantToObject(Value, fields[i].Info.FieldType);
+                    var obj = VariantHelper.VariantToObject(Value, field.FieldType);
                     behaviour.ApplySyncVar(FieldHash, obj, Timestamp);
                     return;
                 }
